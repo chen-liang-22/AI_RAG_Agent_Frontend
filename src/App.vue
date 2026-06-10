@@ -88,6 +88,7 @@ const outputMode = ref<OutputMode>('stream') // 默认使用流式输出
 // userId 会随每次请求传给后端。
 // 后端工具 get_user_id 会读取这个值，再用于查询用户外部数据或生成报告。
 const userId = ref(generateUserId()) // 当前会话用户 ID
+const conversationId = ref<string | null>(null) // 当前后端会话 ID；首轮为空，由后端创建
 const health = ref<HealthResponse | null>(null) // 后端健康状态，初始为空
 
 // messages 是页面聊天记录。
@@ -351,6 +352,7 @@ function clearConversation() { // 清空当前对话
   }
 
   userId.value = generateUserId(userId.value) // 换一个新的用户 ID
+  conversationId.value = null // 清空后让后端创建新 conversation_id
   messages.value = [welcomeMessage(userId.value)] // 重置消息列表，只保留欢迎语
   input.value = '' // 清空输入框
   ElMessage.success(`已清空对话，新用户 ID：${userId.value}`) // 显示成功提示
@@ -402,9 +404,13 @@ async function handleSend() { // 发送消息主函数
       await sendChatStream( // 调用流式接口
         question, // 用户问题
         userId.value, // 当前用户 ID
+        conversationId.value, // 当前会话 ID，首轮为空
         async (chunk) => { // 每收到一个 chunk，就执行这个回调
           messages.value[assistantMessageIndex].content += chunk // 把 chunk 追加到助手消息正文
           await scrollToBottom() // DOM 更新后滚动到底部
+        },
+        (nextConversationId) => { // 后端在 meta/done 事件里返回会话 ID
+          conversationId.value = nextConversationId // 保存后续请求使用
         },
         controller.signal, // 传入取消信号，支持停止生成
       )
@@ -413,7 +419,13 @@ async function handleSend() { // 发送消息主函数
       // - sendChat 会等待 `/chat` 返回完整 JSON。
       // - response.answer 已经是最终完整回答。
       // - 页面只赋值一次，因此不会出现逐字/逐段渲染。
-      const response = await sendChat(question, userId.value, controller.signal) // 调用一次性接口并等待完整回答
+      const response = await sendChat(
+        question,
+        userId.value,
+        conversationId.value,
+        controller.signal,
+      ) // 调用一次性接口并等待完整回答
+      conversationId.value = response.conversation_id || conversationId.value // 保存后续请求使用
       messages.value[assistantMessageIndex].content = response.answer || '没有返回内容' // 一次性填充助手消息
     }
   } catch (error) {
@@ -486,6 +498,10 @@ onMounted(() => { // Vue 组件挂载完成后执行
           <div class="status-row">
             <span>用户 ID</span>
             <code>{{ userId }}</code>
+          </div>
+          <div class="status-row">
+            <span>会话 ID</span>
+            <code>{{ conversationId || 'new' }}</code>
           </div>
         </div>
       </section>

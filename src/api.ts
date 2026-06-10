@@ -9,6 +9,7 @@ export interface ChatResponse { // `/chat` 一次性接口返回的数据结构
   // 一次性聊天接口返回的完整回答。
   // 流式接口不会使用这个结构，而是不断收到 SSE chunk 事件。
   answer: string
+  conversation_id: string
 }
 
 export interface KnowledgeFileResponse { // `/knowledge/files` 返回的单个知识库文件结构
@@ -81,6 +82,7 @@ export interface DebugRetrieveResponse { // `/debug/retrieve` 调试接口响应
   sub_queries: string[] // 生成的子查询
   filters: Record<string, string[]> // 生成的 metadata filter
   candidate_count: number // 多路召回候选数量
+  groups?: Array<{ search_query: string; candidate_count: number }> // 每个 search_query 的候选数量
   reranked: DebugRetrieveItem[] // 精排后的结果
 }
 
@@ -221,7 +223,12 @@ export function debugRetrieve(query: string) { // 调试 RAG 检索链路
   })
 }
 
-export function sendChat(message: string, userId: string, signal?: AbortSignal) { // 一次性聊天请求函数
+export function sendChat(
+  message: string,
+  userId: string,
+  conversationId: string | null,
+  signal?: AbortSignal,
+) { // 一次性聊天请求函数
   // 一次性聊天请求：
   // - 前端发送 message 和 user_id。
   // - 后端完整执行 Agent。
@@ -229,7 +236,7 @@ export function sendChat(message: string, userId: string, signal?: AbortSignal) 
   // - 适合“最终答案一次展示”的模式。
   return request<ChatResponse>('/chat', { // 请求后端 `/chat` 一次性接口
     method: 'POST', // 聊天请求携带 JSON 请求体，所以使用 POST
-    body: JSON.stringify({ message, user_id: userId }), // 把前端字段转换成后端需要的 message/user_id
+    body: JSON.stringify({ message, user_id: userId, conversation_id: conversationId }), // 携带会话 ID
     signal, // 允许外部通过 AbortController 取消请求
   })
 }
@@ -237,7 +244,9 @@ export function sendChat(message: string, userId: string, signal?: AbortSignal) 
 export async function sendChatStream(
   message: string, // 用户输入的问题
   userId: string, // 当前会话用户 ID
+  conversationId: string | null, // 当前会话 ID，首轮为空时后端会创建
   onChunk: (content: string) => void | Promise<void>, // 每收到一个回答片段时调用的回调
+  onConversationId: (conversationId: string) => void, // 收到后端会话 ID 时调用
   signal?: AbortSignal, // 可选取消信号，用于停止生成
 ) { // 流式聊天请求函数
   // 流式聊天请求：
@@ -254,7 +263,7 @@ export async function sendChatStream(
       // 本地开发或代理场景下，避免缓存层把流式响应攒完整再交给浏览器。
       'Cache-Control': 'no-cache', // 告诉中间层不要缓存当前请求
     },
-    body: JSON.stringify({ message, user_id: userId }), // 请求体仍然是 message/user_id
+    body: JSON.stringify({ message, user_id: userId, conversation_id: conversationId }), // 请求体带上 conversation_id
     // AbortSignal 用于“停止生成”按钮。
     // 前端调用 abort() 后，fetch 会中断读取，后续 catch 分支会显示“已停止生成”。
     signal, // 把取消信号交给 fetch
@@ -300,6 +309,9 @@ export async function sendChatStream(
     // - {"error": "..."} 表示生成失败。
     // - {"done": true} 表示结束；前端无需额外处理，reader 结束即可收尾。
     const data = JSON.parse(dataText) // 把 data 字符串解析成对象
+    if (data.conversation_id) { // meta/done 事件会带回会话 ID
+      onConversationId(data.conversation_id) // 保存到页面状态，后续请求继续携带
+    }
     if (data.content) { // content 表示一个正常回答片段
       // 必须 await onChunk：
       // - App.vue 里的 onChunk 会更新 Vue 响应式消息内容。
