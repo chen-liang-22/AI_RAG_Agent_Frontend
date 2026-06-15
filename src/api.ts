@@ -12,6 +12,41 @@ export interface ChatResponse { // `/chat` 一次性接口返回的数据结构
   conversation_id: string
 }
 
+export interface ConversationSummaryResponse { // `/conversations` 返回的单个会话摘要
+  conversation_id: string // 会话唯一 ID
+  user_id?: string | null // 用户 ID
+  title?: string | null // 会话标题
+  status: string // 会话状态
+  message_count: number // 消息数量
+  created_at: string // 创建时间
+  updated_at: string // 更新时间
+  last_message_at?: string | null // 最后一条消息时间
+}
+
+export interface ConversationListResponse { // `/conversations` 分页响应
+  items: ConversationSummaryResponse[] // 当前页会话
+  total: number // 总数
+  page: number // 当前页
+  page_size: number // 每页数量
+}
+
+export interface ConversationMessageResponse { // `/conversations/{conversation_id}` 中的单条消息
+  message_id: string // 消息 ID
+  conversation_id: string // 会话 ID
+  sequence_no: number // 消息顺序
+  role: string // user/assistant/system
+  content: string // 消息正文
+  content_type: string // 消息类型
+  model_name?: string | null // 模型名称
+  token_count?: number | null // token 数
+  created_at: string // 创建时间
+}
+
+export interface ConversationDetailResponse { // `/conversations/{conversation_id}` 详情响应
+  conversation: ConversationSummaryResponse // 会话摘要
+  messages: ConversationMessageResponse[] // 全部消息
+}
+
 export interface KnowledgeFileResponse { // `/knowledge/files` 返回的单个知识库文件结构
   document_id: string // 文件唯一 ID，删除和重建索引都靠它定位
   filename: string // 原始文件名
@@ -137,6 +172,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> { // 
 
 export function fetchHealth() { // 获取后端和 Qdrant 健康状态
   return request<HealthResponse>('/health') // GET /health，返回 HealthResponse
+}
+
+export function listConversations(page = 1, pageSize = 10, userId?: string) { // 分页查询聊天记录
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (userId) {
+    params.set('user_id', userId)
+  }
+  return request<ConversationListResponse>(`/conversations?${params.toString()}`)
+}
+
+export function getConversationDetail(conversationId: string) { // 查询单个聊天记录详情
+  return request<ConversationDetailResponse>(`/conversations/${encodeURIComponent(conversationId)}`)
 }
 
 export function reloadKnowledge() { // 触发后端重新加载知识库到 Qdrant
