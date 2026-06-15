@@ -10,6 +10,8 @@ export interface ChatResponse { // `/chat` 一次性接口返回的数据结构
   // 流式接口不会使用这个结构，而是不断收到 SSE chunk 事件。
   answer: string
   conversation_id: string
+  first_token_ms?: number | null // 首字/首片耗时；一次性接口通常等于 total_ms
+  total_ms?: number | null // 本次聊天总耗时
 }
 
 export interface ConversationSummaryResponse { // `/conversations` 返回的单个会话摘要
@@ -39,12 +41,19 @@ export interface ConversationMessageResponse { // `/conversations/{conversation_
   content_type: string // 消息类型
   model_name?: string | null // 模型名称
   token_count?: number | null // token 数
+  first_token_ms?: number | null // 助手首字/首片耗时
+  total_ms?: number | null // 助手完整回答耗时
   created_at: string // 创建时间
 }
 
 export interface ConversationDetailResponse { // `/conversations/{conversation_id}` 详情响应
   conversation: ConversationSummaryResponse // 会话摘要
   messages: ConversationMessageResponse[] // 全部消息
+}
+
+export interface ConversationDeleteResponse { // DELETE `/conversations/{conversation_id}` 响应
+  status: string // 固定为 deleted
+  conversation_id: string // 被删除的会话 ID
 }
 
 export interface KnowledgeFileResponse { // `/knowledge/files` 返回的单个知识库文件结构
@@ -82,6 +91,14 @@ export interface KnowledgeUploadPreviewResponse { // `/knowledge/upload/preview`
   reasons: string[] // 识别原因
   llm_used: boolean // 是否使用 LLM 兜底
   sample_text: string // 预览文本
+}
+
+export interface KnowledgeFilePreviewResponse { // `/knowledge/files/{document_id}/preview` 已入库文件预览结构
+  document: KnowledgeFileResponse // 被预览的知识库文件元数据
+  preview_type: string // text/pdf_text/unsupported，表示后端采用的预览方式
+  content: string // 预览文本内容
+  truncated: boolean // 是否因为内容过长被后端截断
+  page_count?: number | null // PDF 页数；TXT 文件为空
 }
 
 export interface KnowledgeDeleteResponse { // `/knowledge/files/{document_id}` DELETE 响应结构
@@ -174,7 +191,7 @@ export function fetchHealth() { // 获取后端和 Qdrant 健康状态
   return request<HealthResponse>('/health') // GET /health，返回 HealthResponse
 }
 
-export function listConversations(page = 1, pageSize = 10, userId?: string) { // 分页查询聊天记录
+export function listConversations(page = 1, pageSize = 10, userId?: string, keyword?: string) { // 分页查询聊天记录
   const params = new URLSearchParams({
     page: String(page),
     page_size: String(pageSize),
@@ -182,11 +199,20 @@ export function listConversations(page = 1, pageSize = 10, userId?: string) { //
   if (userId) {
     params.set('user_id', userId)
   }
+  if (keyword?.trim()) {
+    params.set('keyword', keyword.trim())
+  }
   return request<ConversationListResponse>(`/conversations?${params.toString()}`)
 }
 
 export function getConversationDetail(conversationId: string) { // 查询单个聊天记录详情
   return request<ConversationDetailResponse>(`/conversations/${encodeURIComponent(conversationId)}`)
+}
+
+export function deleteConversation(conversationId: string) { // 删除单个聊天记录
+  return request<ConversationDeleteResponse>(`/conversations/${encodeURIComponent(conversationId)}`, {
+    method: 'DELETE',
+  })
 }
 
 export function reloadKnowledge() { // 触发后端重新加载知识库到 Qdrant
@@ -197,6 +223,13 @@ export function reloadKnowledge() { // 触发后端重新加载知识库到 Qdra
 
 export function listKnowledgeFiles() { // 获取知识库文件列表
   return request<KnowledgeFileResponse[]>('/knowledge/files') // GET /knowledge/files
+}
+
+export function previewKnowledgeDocument(documentId: string, maxChars = 30000) { // 预览已入库知识库文件
+  const params = new URLSearchParams({ max_chars: String(maxChars) }) // 控制后端最多返回多少字符
+  return request<KnowledgeFilePreviewResponse>(
+    `/knowledge/files/${encodeURIComponent(documentId)}/preview?${params.toString()}`,
+  ) // GET /knowledge/files/{document_id}/preview
 }
 
 export async function previewKnowledgeFile(file: File, signal?: AbortSignal) { // 上传文件并获取预解析结果
@@ -279,6 +312,7 @@ export async function sendChatStream(
   conversationId: string | null, // 当前会话 ID，首轮为空时后端会创建
   onChunk: (content: string) => void | Promise<void>, // 每收到一个回答片段时调用的回调
   onConversationId: (conversationId: string) => void, // 收到后端会话 ID 时调用
+  onMetrics?: (metrics: { first_token_ms?: number | null; total_ms?: number | null }) => void, // 收到耗时指标时调用
   signal?: AbortSignal, // 可选取消信号，用于停止生成
 ) { // 流式聊天请求函数
   // 流式聊天请求：
@@ -343,6 +377,12 @@ export async function sendChatStream(
     const data = JSON.parse(dataText) // 把 data 字符串解析成对象
     if (data.conversation_id) { // meta/done 事件会带回会话 ID
       onConversationId(data.conversation_id) // 保存到页面状态，后续请求继续携带
+    }
+    if (data.first_token_ms !== undefined || data.total_ms !== undefined) { // metric/done 事件会带耗时
+      onMetrics?.({
+        first_token_ms: data.first_token_ms ?? null,
+        total_ms: data.total_ms ?? null,
+      }) // 把耗时交给 App.vue 展示
     }
     if (data.content) { // content 表示一个正常回答片段
       // 必须 await onChunk：
