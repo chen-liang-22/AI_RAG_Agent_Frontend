@@ -173,6 +173,77 @@ export interface KnowledgeBulkReindexResponse { // `/knowledge/files/reindex-all
   results: KnowledgeReindexResult[] // 每个文件的重建结果
 }
 
+export interface ExamGeneratePayload { // `/exam/generate` 生成试卷请求结构
+  collection_name?: string | null // 题源所在 Qdrant collection；为空时后端使用默认 collection
+  document_id?: string | null // 指定题源文件；为空时从整个 collection 抽题
+  section_path?: string | null // 指定章节路径；为空时不按章节过滤
+  mode?: string // 组卷模式，第一阶段主要使用 random_practice
+  question_count: number // 题目数量
+  score_per_question: number // 单题分值
+  difficulty?: string // 难度标识，第一阶段用于展示和透传
+  seed?: number | null // 随机种子；填写后同范围抽题结果可复现
+  question_types?: string[] // 题型列表，第一阶段使用 short_answer
+}
+
+export interface ExamQuestionSource { // 考试题目的知识来源信息
+  document_id?: string | null // 来源文件编号
+  filename?: string | null // 来源文件名
+  section_path?: string | null // 来源章节路径
+  source_page?: number | null // 来源页码
+}
+
+export interface ExamQuestionResponse { // `/exam/generate` 返回的单题结构
+  question_id: string // 本次试卷内的题目编号
+  source_question_id?: string | null // 知识库中的原始题目编号
+  question_type: string // 题型，例如 short_answer
+  difficulty: string // 难度
+  question: string // 题干
+  options: string[] // 选项，简答题为空
+  reference_answer: string // 参考答案
+  score: number // 本题分值
+  source: ExamQuestionSource // 来源信息
+}
+
+export interface ExamGenerateResponse { // `/exam/generate` 响应结构
+  paper_id: string // 试卷编号
+  title: string // 试卷标题
+  total_score: number // 试卷总分
+  questions: ExamQuestionResponse[] // 题目列表
+}
+
+export interface ExamAnswerPayload { // 单题评分请求结构
+  question_id: string // 题目编号
+  answer: string // 用户答案
+  question: string // 题干
+  reference_answer: string // 参考答案
+  max_score: number // 本题满分
+}
+
+export interface ExamGradePayload { // `/exam/grade` 批量评分请求结构
+  paper_id: string // 试卷编号
+  user_id?: string | null // 答题用户编号
+  model_mode?: string | null // 评分模型档位
+  answers: ExamAnswerPayload[] // 用户答案列表
+}
+
+export interface ExamGradeResult { // 单题结构化评分结果
+  question_id: string // 题目编号
+  score: number // 实际得分
+  max_score: number // 本题满分
+  hit_points: string[] // 命中要点
+  missing_points: string[] // 缺失要点
+  wrong_points: string[] // 错误点
+  comment: string // 评分点评
+  review_suggestion: string // 复习建议
+}
+
+export interface ExamGradeResponse { // `/exam/grade` 响应结构
+  paper_id: string // 试卷编号
+  total_score: number // 总得分
+  max_score: number // 满分
+  results: ExamGradeResult[] // 单题评分结果
+}
+
 // API_BASE_URL 有两个典型取值：
 // - 本地开发：通过 .env.development 配成 http://127.0.0.1:8000，绕过 Vite 代理，减少流式缓冲干扰。
 // - Docker/Nginx 部署：使用默认 /api，由 Nginx 把 /api 转发给后端 api 容器。
@@ -381,6 +452,20 @@ export function reindexKnowledgeFile(documentId: string) { // 重新索引知识
 export function reindexAllKnowledgeFiles() { // 清空 Qdrant collection 并重新索引全部知识库文件
   return request<KnowledgeBulkReindexResponse>('/knowledge/files/reindex-all', {
     method: 'POST', // 批量重建会清空并重建 Qdrant collection，因此使用 POST
+  })
+}
+
+export function generateExamPaper(payload: ExamGeneratePayload) { // 调用后端从结构化题库生成试卷
+  return request<ExamGenerateResponse>('/exam/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function gradeExamPaper(payload: ExamGradePayload) { // 调用后端批量评分试卷答案
+  return request<ExamGradeResponse>('/exam/grade', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }
 
