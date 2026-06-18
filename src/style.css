@@ -90,10 +90,7 @@ button, input, textarea { font: inherit; }
 .portal-theme-button,
 .dashboard-panel,
 .cockpit-card,
-.exam-toolbar,
 .exam-control-panel,
-.paper-sheet,
-.question-card,
 .page-hero,
 .data-table-lite,
 .flow-line {
@@ -143,8 +140,7 @@ button, input, textarea { font: inherit; }
 
 .portal-brand h1,
 .page-hero h2,
-.panel-title,
-.question-head strong {
+.panel-title {
   margin: 0;
   letter-spacing: 0;
 }
@@ -153,8 +149,7 @@ button, input, textarea { font: inherit; }
 .page-hero p,
 .panel-note,
 .data-table-lite em,
-.cockpit-card p,
-.question-title {
+.cockpit-card p {
   margin: 0;
   color: var(--text-soft);
 }
@@ -394,9 +389,7 @@ button, input, textarea { font: inherit; }
 }
 
 .dashboard-panel,
-.exam-toolbar,
-.exam-control-panel,
-.paper-sheet {
+.exam-control-panel {
   border-radius: 18px;
   padding: 14px;
 }
@@ -767,8 +760,7 @@ button, input, textarea { font: inherit; }
   border-radius: 14px;
 }
 
-.flow-line span,
-.paper-summary span {
+.flow-line span {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -776,17 +768,6 @@ button, input, textarea { font: inherit; }
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--text);
-}
-
-.exam-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(128px, 1fr)) minmax(132px, 0.9fr);
-  gap: 14px;
-  align-items: end;
-  position: sticky;
-  top: 16px;
-  z-index: 2;
-  backdrop-filter: blur(16px);
 }
 
 .exam-hero {
@@ -856,156 +837,11 @@ button, input, textarea { font: inherit; }
   white-space: nowrap;
 }
 
-.exam-stage {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-
-.exam-toolbar label {
-  display: grid;
-  gap: 8px;
-  color: var(--text-soft);
-  font-size: 13px;
-}
-
-.paper-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.paper-sheet {
-  display: grid;
-  gap: 14px;
-}
-
-.paper-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent),
-    color-mix(in srgb, var(--surface) 86%, transparent);
-}
-
-.paper-heading > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.paper-heading strong,
-.paper-heading em {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.paper-heading em {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-style: normal;
-}
-
-.question-card {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 16px;
-  border-left: 3px solid color-mix(in srgb, var(--primary) 76%, var(--cyan));
-}
-
-.question-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text-soft);
-}
-
-.question-title { font-size: 15px; }
-
-.question-source {
-  width: fit-content;
-  max-width: 100%;
-  padding: 7px 10px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--text-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-}
-
-.grading-result,
 .empty-paper {
   padding: 14px;
   border: 1px dashed var(--line-strong);
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface) 80%, transparent);
-}
-
-.grading-result {
-  display: grid;
-  gap: 12px;
-}
-
-.grading-score {
-  display: grid;
-  gap: 4px;
-}
-
-.grading-score strong {
-  color: var(--primary);
-  font-size: 18px;
-}
-
-.grading-score span,
-.review-suggestion {
-  color: var(--text-soft);
-}
-
-.grading-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.grading-grid > div {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface) 76%, transparent);
-}
-
-.grading-grid b {
-  font-size: 13px;
-}
-
-.grading-grid ul {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding-left: 18px;
-  color: var(--text-soft);
-  font-size: 13px;
-}
-
-.review-suggestion {
-  margin: 0;
-  padding: 10px 12px;
-  border-left: 3px solid color-mix(in srgb, var(--primary) 72%, var(--cyan));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
 .empty-paper {
@@ -1022,14 +858,295 @@ button, input, textarea { font: inherit; }
   color: var(--text);
 }
 
-.grading-result p,
-.question-card details p {
+.empty-paper span {
+  max-width: 100%;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.exam-chat-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  min-height: calc(100vh - 44px);
+  height: calc(100vh - 44px);
+  overflow: hidden;
+}
+
+.exam-conversation-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 285px) minmax(340px, 1fr) minmax(240px, 285px);
+  gap: 14px;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.exam-chat-panel,
+.exam-history-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, transparent), var(--surface-2));
+  box-shadow: var(--shadow-sm);
+}
+
+.exam-chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.exam-history-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.exam-score-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.exam-score-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.exam-score-strip .el-progress {
+  min-width: 0;
+}
+
+.exam-chat-window {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  scroll-behavior: smooth;
+}
+
+.exam-chat-message {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  max-width: 86%;
+}
+
+.exam-chat-message.user {
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-self: flex-end;
+}
+
+.exam-chat-message.user .exam-chat-avatar {
+  grid-column: 2;
+  grid-row: 1;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+}
+
+.exam-chat-message.user .exam-chat-bubble {
+  grid-column: 1;
+  grid-row: 1;
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 16%, var(--surface)), color-mix(in srgb, var(--surface) 86%, transparent));
+}
+
+.exam-chat-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--cyan), var(--primary));
+}
+
+.exam-chat-bubble {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.exam-chat-bubble p {
+  margin: 0;
+  line-height: 1.7;
   white-space: pre-wrap;
 }
 
-.exam-footer {
+.exam-question-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.exam-question-meta em,
+.exam-history-list button span,
+.exam-history-list button em,
+.exam-detail-question em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exam-option-preview,
+.answer-options {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exam-option-preview span {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-soft);
+  font-size: 13px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+.exam-analysis-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+}
+
+.exam-analysis-card strong {
+  color: var(--green);
+}
+
+.exam-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.exam-analysis-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.exam-analysis-grid b,
+.exam-analysis-grid span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.exam-answer-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 -12px 30px color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.exam-answer-placeholder {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.question-type-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exam-history-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.exam-history-list button {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.exam-history-list button:hover {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--line));
+  box-shadow: var(--shadow-sm);
+}
+
+.empty-history {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  color: var(--text-muted);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
+
+.exam-detail-body {
+  display: grid;
+  gap: 14px;
+}
+
+.exam-detail-summary,
+.exam-detail-question {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.exam-detail-summary span {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.exam-detail-summary em,
+.detail-user-answer {
+  color: var(--text-soft);
+  font-style: normal;
+}
+
+.exam-detail-question p {
+  margin: 0;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .tech-button.primary {
@@ -1044,10 +1161,7 @@ button, input, textarea { font: inherit; }
 .portal-shell.theme-dark .portal-theme-button,
 .portal-shell.theme-dark .dashboard-panel,
 .portal-shell.theme-dark .cockpit-card,
-.portal-shell.theme-dark .exam-toolbar,
 .portal-shell.theme-dark .exam-control-panel,
-.portal-shell.theme-dark .paper-sheet,
-.portal-shell.theme-dark .question-card,
 .portal-shell.theme-dark .page-hero,
 .portal-shell.theme-dark .data-table-lite,
 .portal-shell.theme-dark .flow-line {
@@ -1446,8 +1560,6 @@ button, input, textarea { font: inherit; }
 }
 
 .composer-textarea .el-textarea__inner,
-.exam-toolbar .el-input__wrapper,
-.exam-toolbar .el-select__wrapper,
 .portal-shell .el-input__wrapper,
 .portal-shell .el-select__wrapper,
 .portal-shell .el-input-number,
@@ -1938,7 +2050,19 @@ button, input, textarea { font: inherit; }
   .portal-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .cockpit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-panels { grid-template-columns: 1fr; }
-  .exam-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exam-chat-page {
+    height: auto;
+    min-height: calc(100vh - 44px);
+    overflow: visible;
+  }
+  .exam-conversation-layout {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+  .exam-control-panel,
+  .exam-history-panel { position: static; }
+  .exam-chat-panel { min-height: 620px; }
+  .exam-chat-window { min-height: 0; }
   .knowledge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .conversation-layout { grid-template-columns: 1fr; }
 }
@@ -1987,6 +2111,18 @@ button, input, textarea { font: inherit; }
   .page-hero,
   .composer-input {
     grid-template-columns: 1fr;
+  }
+
+  .exam-score-strip,
+  .exam-answer-bar,
+  .exam-control-grid,
+  .exam-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .exam-chat-message,
+  .exam-chat-message.user {
+    max-width: 100%;
   }
 
   .cockpit-grid,
