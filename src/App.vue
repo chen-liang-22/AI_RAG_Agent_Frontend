@@ -10,6 +10,7 @@ type MainPage = 'home' | 'chat' | 'exam'
 
 const themeMode = ref<ThemeMode>(readInitialThemeMode())
 const activePage = ref<MainPage>('home')
+const chatHistoryRequest = ref<{ token: number; conversationId: string } | null>(null)
 const themeToggleIcon = computed(() => (themeMode.value === 'dark' ? Sun : Moon))
 
 const pages = [
@@ -22,6 +23,11 @@ function readInitialThemeMode(): ThemeMode {
   if (typeof window === 'undefined') return 'dark'
   const savedTheme = window.localStorage.getItem('ai-rag-agent-theme')
   return savedTheme === 'light' ? 'light' : 'dark'
+}
+
+function openChatHistory(conversationId: string) {
+  activePage.value = 'chat'
+  chatHistoryRequest.value = { token: Date.now(), conversationId }
 }
 
 watch(themeMode, (nextTheme) => {
@@ -67,8 +73,8 @@ onMounted(() => {
     </aside>
 
     <section class="portal-content" :class="`page-${activePage}`">
-      <HomePage v-if="activePage === 'home'" :theme-mode="themeMode" />
-      <ChatPage v-else-if="activePage === 'chat'" :theme-mode="themeMode" />
+      <HomePage v-if="activePage === 'home'" :theme-mode="themeMode" @open-chat-history="openChatHistory" />
+      <ChatPage v-else-if="activePage === 'chat'" :theme-mode="themeMode" :history-request="chatHistoryRequest" />
       <ExamPage v-else :theme-mode="themeMode" />
     </section>
   </main>

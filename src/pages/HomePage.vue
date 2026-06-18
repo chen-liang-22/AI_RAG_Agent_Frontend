@@ -5,16 +5,13 @@ import {
   ArrowLeft,
   Bot,
   Boxes,
-  BrainCircuit,
   ChevronRight,
   Clock3,
   DatabaseZap,
   Eye,
   FileText,
-  Network,
   Pencil,
   RefreshCw,
-  Route,
   Search,
   ShieldCheck,
   Trash2,
@@ -22,7 +19,6 @@ import {
 } from 'lucide-vue-next'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  API_BASE_URL,
   confirmKnowledgeUpload,
   createDictionaryGroup,
   createDictionaryItem,
@@ -30,6 +26,7 @@ import {
   deleteDictionaryItem,
   deleteKnowledgeFile,
   fetchHealth,
+  getConversationDetail,
   listConversations,
   listDictionaries,
   listKnowledgeFiles,
@@ -52,6 +49,9 @@ import {
 } from '../api'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
+const emit = defineEmits<{
+  openChatHistory: [conversationId: string]
+}>()
 
 interface DictionaryFormState { // 字典项编辑表单，字段和后端字典项保存接口一一对应
   dictionaryCode: string
@@ -76,6 +76,12 @@ const knowledgeFiles = ref<KnowledgeFileResponse[]>([]) // 后端知识库文件
 const dictionaries = ref<DictionaryGroupResponse[]>([]) // 后端系统字典分组
 const conversations = ref<ConversationSummaryResponse[]>([]) // 最近会话列表
 const conversationTotal = ref(0) // 会话总数
+const conversationTooltipMap = ref<Record<string, string>>({}) // 最近会话悬浮提示，优先展示完整用户问题
+const overviewActiveCollection = ref('') // 首页知识库概览当前选中的向量库
+const overviewKnowledgePage = ref(1) // 首页知识库概览分页页码
+const overviewKnowledgePageSize = 6 // 首页知识库概览每页展示 6 条，兼顾信息量和一屏可读性
+const overviewConversationPage = ref(1) // 首页最近会话分页页码
+const overviewConversationPageSize = 6 // 首页最近会话每页展示 6 条
 
 const knowledgeDialogVisible = ref(false) // 知识库管理弹窗开关
 const knowledgeLoading = ref(false) // 知识库文件列表加载状态
@@ -133,13 +139,11 @@ const dictionaryItemCount = computed(() => dictionaries.value.reduce((total, gro
 const latestConversation = computed(() => conversations.value[0])
 
 const cockpitCards = computed(() => [
-  { title: '星图服务状态', value: serviceStatusLabel(health.value?.status), detail: `Qdrant ${serviceStatusLabel(health.value?.qdrant)}`, icon: ShieldCheck, tone: health.value?.status === 'ok' ? 'good' : 'warn' },
+  { title: '服务健康', value: serviceStatusLabel(health.value?.status), detail: `Qdrant ${serviceStatusLabel(health.value?.qdrant)}`, icon: ShieldCheck, tone: health.value?.status === 'ok' ? 'good' : 'warn' },
   { title: '知识矩阵', value: `${indexedCount.value}/${knowledgeFiles.value.length}`, detail: '已索引 / 文件总数', icon: DatabaseZap, tone: 'blue' },
   { title: '多库航道', value: collectionCount.value || 0, detail: '可用知识库 Collection', icon: Boxes, tone: 'cyan' },
   { title: '字典引擎', value: dictionaries.value.length, detail: `${dictionaryItemCount.value} 个字典项`, icon: FileText, tone: 'violet' },
   { title: '会话星轨', value: conversationTotal.value, detail: latestConversation.value?.title || '暂无最近会话', icon: Clock3, tone: 'amber' },
-  { title: '问答链路', value: 'Direct RAG', detail: 'Planner -> Qdrant -> LLM', icon: Route, tone: 'green' },
-  { title: '接口枢纽', value: API_BASE_URL, detail: '前端当前 API Base URL', icon: Network, tone: 'slate' },
 ])
 
 const collectionOptions = computed(() => { // 汇总健康检查和文件列表中的 collection，供上传与页签共用
@@ -184,6 +188,28 @@ const knowledgeCollectionTabs = computed(() => ( // 知识库弹窗页签统计
   })
 ))
 
+const overviewKnowledgeFiles = computed(() => { // 首页概览按当前向量库过滤文件
+  if (!overviewActiveCollection.value) return knowledgeFiles.value
+  return knowledgeFiles.value.filter((file) => file.collection_name === overviewActiveCollection.value)
+})
+
+const overviewPagedKnowledgeFiles = computed(() => { // 首页概览当前页文件
+  const start = (overviewKnowledgePage.value - 1) * overviewKnowledgePageSize
+  return overviewKnowledgeFiles.value.slice(start, start + overviewKnowledgePageSize)
+})
+
+const overviewCollectionTabs = computed(() => ( // 首页向量库页签统计
+  knowledgeCollectionTabs.value.map((tab) => ({
+    ...tab,
+    active: overviewActiveCollection.value === tab.collectionName,
+  }))
+))
+
+const overviewPagedConversations = computed(() => { // 首页最近会话当前页数据
+  const start = (overviewConversationPage.value - 1) * overviewConversationPageSize
+  return conversations.value.slice(start, start + overviewConversationPageSize)
+})
+
 const pagedDictionaryGroups = computed(() => { // 父级字典分页结果
   const start = (dictionaryPage.value - 1) * dictionaryPageSize
   return dictionaries.value.slice(start, start + dictionaryPageSize)
@@ -204,12 +230,30 @@ watch(activeKnowledgeCollection, () => { // 切换 collection 时回到知识库
 watch(collectionOptions, (collections) => { // 确保知识库弹窗始终选中一个有效 collection
   if (!collections.length) {
     activeKnowledgeCollection.value = ''
+    overviewActiveCollection.value = ''
     return
   }
   if (!activeKnowledgeCollection.value || !collections.includes(activeKnowledgeCollection.value)) {
     activeKnowledgeCollection.value = collections[0]
   }
+  if (!overviewActiveCollection.value || !collections.includes(overviewActiveCollection.value)) {
+    overviewActiveCollection.value = collections[0]
+  }
 }, { immediate: true })
+
+watch(overviewActiveCollection, () => { // 首页切换向量库时回到第一页
+  overviewKnowledgePage.value = 1
+})
+
+watch(overviewKnowledgeFiles, (files) => { // 文件刷新后修正首页概览页码
+  const maxPage = Math.max(1, Math.ceil(files.length / overviewKnowledgePageSize))
+  overviewKnowledgePage.value = Math.min(overviewKnowledgePage.value, maxPage)
+})
+
+watch(conversations, (items) => { // 会话刷新后修正首页最近会话页码
+  const maxPage = Math.max(1, Math.ceil(items.length / overviewConversationPageSize))
+  overviewConversationPage.value = Math.min(overviewConversationPage.value, maxPage)
+})
 
 watch(dictionaries, () => { // 字典刷新后修正详情页和分页状态
   if (activeDictionaryCode.value && !dictionaries.value.some((group) => group.dictionary_code === activeDictionaryCode.value)) {
@@ -276,6 +320,29 @@ function formatDateTime(value?: string | null) { // 格式化后端 ISO 时间
   return value.replace('T', ' ').slice(0, 19)
 }
 
+function conversationFallbackTitle(conversation: ConversationSummaryResponse) {
+  return conversation.title || '未命名会话'
+}
+
+function conversationTooltipContent(conversation: ConversationSummaryResponse) {
+  return conversationTooltipMap.value[conversation.conversation_id] || conversationFallbackTitle(conversation)
+}
+
+function openConversationHistory(conversation: ConversationSummaryResponse) {
+  emit('openChatHistory', conversation.conversation_id)
+}
+
+async function loadConversationTooltip(conversation: ConversationSummaryResponse) {
+  if (conversationTooltipMap.value[conversation.conversation_id]) return
+  try {
+    const detail = await getConversationDetail(conversation.conversation_id)
+    const userMessage = detail.messages.find((message) => message.role === 'user' && message.content.trim())
+    conversationTooltipMap.value[conversation.conversation_id] = userMessage?.content.trim() || conversationFallbackTitle(conversation)
+  } catch {
+    conversationTooltipMap.value[conversation.conversation_id] = conversationFallbackTitle(conversation)
+  }
+}
+
 function knowledgeActionKey(action: string, documentId: string) { // 拼接知识库文件操作唯一 key
   return `${action}:${documentId}`
 }
@@ -304,7 +371,7 @@ async function refreshDashboard() { // 刷新首页所有总览数据
       fetchHealth(),
       listKnowledgeFiles(),
       listDictionaries(),
-      listConversations(1, 5),
+      listConversations(1, 30),
     ])
     health.value = healthData
     knowledgeFiles.value = filesData
@@ -767,42 +834,90 @@ onMounted(() => {
       </article>
     </section>
 
-    <section class="dashboard-actions-grid">
-      <button class="dashboard-action-tile" type="button" @click="openKnowledgeDialog">
-        <span class="cockpit-icon"><DatabaseZap :size="22" /></span>
-        <strong>知识库管理</strong>
-        <em>上传、预览、删除、重建索引</em>
-      </button>
-      <button class="dashboard-action-tile" type="button" @click="openDictionaryDialog">
-        <span class="cockpit-icon"><FileText :size="22" /></span>
-        <strong>字典表管理</strong>
-        <em>维护枚举、状态、模型档位和切分策略</em>
-      </button>
-    </section>
-
     <section class="dashboard-panels">
       <article class="dashboard-panel">
-        <div class="panel-title"><DatabaseZap :size="18" /><span>知识库概览</span></div>
-        <div class="data-table-lite">
-          <div v-for="file in knowledgeFiles.slice(0, 6)" :key="file.document_id">
-            <span>{{ file.filename }}</span><em>{{ file.collection_name }} / {{ file.status }}</em>
+        <div class="panel-title panel-title-between">
+          <span><DatabaseZap :size="18" />知识库概览</span>
+          <em>{{ overviewKnowledgeFiles.length }} 个文件</em>
+        </div>
+        <div class="overview-collection-tabs" role="tablist" aria-label="首页向量库列表">
+          <button
+            v-for="tab in overviewCollectionTabs"
+            :key="tab.collectionName"
+            type="button"
+            class="overview-collection-tab"
+            :class="{ active: tab.active }"
+            role="tab"
+            :aria-selected="tab.active"
+            @click="overviewActiveCollection = tab.collectionName"
+          >
+            <span>{{ tab.collectionName }}</span>
+            <em>{{ tab.indexed }}/{{ tab.total }}</em>
+          </button>
+        </div>
+        <div class="data-table-lite dashboard-knowledge-table">
+          <div v-for="file in overviewPagedKnowledgeFiles" :key="file.document_id">
+            <el-tooltip :content="file.filename" placement="top" popper-class="smart-tooltip" teleported>
+              <span>{{ file.filename }}</span>
+            </el-tooltip>
+            <el-tooltip :content="`${file.collection_name} / ${file.status}`" placement="top" popper-class="smart-tooltip" teleported>
+              <em>{{ file.collection_name }} / {{ file.status }}</em>
+            </el-tooltip>
           </div>
           <p v-if="knowledgeFiles.length === 0">暂无知识库文件</p>
+          <p v-else-if="overviewKnowledgeFiles.length === 0">当前向量库暂无文件</p>
         </div>
+        <el-pagination
+          v-if="overviewKnowledgeFiles.length > 0"
+          v-model:current-page="overviewKnowledgePage"
+          class="dashboard-mini-pagination"
+          small
+          background
+          layout="prev, pager, next"
+          :page-size="overviewKnowledgePageSize"
+          :total="overviewKnowledgeFiles.length"
+        />
       </article>
       <article class="dashboard-panel">
-        <div class="panel-title"><BrainCircuit :size="18" /><span>工作流说明</span></div>
-        <div class="flow-line"><span>用户问题</span><span>Query Planner</span><span>Qdrant</span><span>LLM 回答</span></div>
-        <p class="panel-note">普通知识问答默认走 Direct RAG，减少工具判断带来的额外耗时。</p>
-      </article>
-      <article class="dashboard-panel">
-        <div class="panel-title"><Clock3 :size="18" /><span>最近会话</span></div>
+        <div class="panel-title panel-title-between">
+          <span><Clock3 :size="18" />最近会话</span>
+          <em>{{ conversationTotal }} 条记录</em>
+        </div>
+        <div class="recent-conversation-strip" aria-label="最近会话概览">
+          <span>最近</span>
+          <em>{{ overviewConversationPageSize }} 条/页</em>
+        </div>
         <div class="data-table-lite">
-          <div v-for="conversation in conversations" :key="conversation.conversation_id">
-            <span>{{ conversation.title || '未命名会话' }}</span><em>{{ formatDateTime(conversation.last_message_at || conversation.updated_at) }}</em>
+          <div
+            v-for="conversation in overviewPagedConversations"
+            :key="conversation.conversation_id"
+            class="clickable-data-row"
+            role="button"
+            tabindex="0"
+            @click="openConversationHistory(conversation)"
+            @keydown.enter="openConversationHistory(conversation)"
+          >
+            <el-tooltip :content="conversationTooltipContent(conversation)" placement="top" popper-class="smart-tooltip" teleported>
+              <span @mouseenter="loadConversationTooltip(conversation)">
+                {{ conversationFallbackTitle(conversation) }}
+              </span>
+            </el-tooltip>
+            <el-tooltip :content="formatDateTime(conversation.last_message_at || conversation.updated_at)" placement="top" popper-class="smart-tooltip" teleported>
+              <em>{{ formatDateTime(conversation.last_message_at || conversation.updated_at) }}</em>
+            </el-tooltip>
           </div>
           <p v-if="conversations.length === 0">暂无聊天记录</p>
         </div>
+        <el-pagination
+          v-if="conversations.length > 0"
+          v-model:current-page="overviewConversationPage"
+          class="dashboard-mini-pagination"
+          small
+          background
+          layout="prev, pager, next"
+          :page-size="overviewConversationPageSize"
+          :total="conversations.length"
+        />
       </article>
     </section>
 
