@@ -187,6 +187,7 @@ export interface ExamSectionsResponse { // `/exam/sections` 响应结构
 }
 
 export interface ExamStartPayload { // `/exam/sessions` 开始考试请求结构
+  title: string // 本场测评名称
   collection_name?: string | null // 题源所在向量库
   document_id?: string | null // 题源文件
   section_path?: string | null // 题源目录

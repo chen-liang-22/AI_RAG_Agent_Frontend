@@ -16,7 +16,7 @@ import {
   Sparkles,
   Target,
 } from 'lucide-vue-next'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   answerExamSession,
   getExamSessionDetail,
@@ -183,7 +183,17 @@ function resetAnswerState() {
   selectedOptions.value = []
 }
 
-// 开始考试：后端会随机抽题、生成全部题目并创建可追溯的考试会话。
+// 生成默认测评名称，用户可以在开始前修改。
+function defaultExamTitle() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const hour = String(now.getHours()).padStart(2, '0')
+  const minute = String(now.getMinutes()).padStart(2, '0')
+  return `知识测评 ${month}-${day} ${hour}:${minute}`
+}
+
+// 开始考试：先输入本场测评名称，再由后端随机抽题并创建可追溯的考试会话。
 async function startExam() {
   if (!selectedCollectionName.value) {
     ElMessage.warning('请先选择向量库')
@@ -196,7 +206,21 @@ async function startExam() {
 
   starting.value = true
   try {
+    const { value } = await ElMessageBox.prompt('请输入本场测评名称，历史记录会显示这个名称。', '开始测评', {
+      confirmButtonText: '开始',
+      cancelButtonText: '取消',
+      inputValue: defaultExamTitle(),
+      inputPlaceholder: '例如：Java 集合专项测评',
+      inputPattern: /\S+/,
+      inputErrorMessage: '测评名称不能为空',
+    })
+    const examTitle = String(value || '').trim()
+    if (!examTitle) {
+      ElMessage.warning('测评名称不能为空')
+      return
+    }
     const response = await startExamSession({
+      title: examTitle,
       collection_name: selectedCollectionName.value,
       document_id: selectedDocumentId.value || null,
       section_path: selectedSectionPath.value || null,
@@ -213,7 +237,7 @@ async function startExam() {
       {
         id: `start-${response.session.session_id}`,
         role: 'assistant',
-        content: `测评开始，共 ${response.session.round_count} 轮，满分 100 分。`,
+        content: `《${response.session.title}》测评开始，共 ${response.session.round_count} 轮，满分 100 分。`,
       },
     ]
     appendAssistantQuestion(response.current_question)
@@ -444,6 +468,9 @@ onMounted(async () => {
                 <em>{{ sourceText(message.question) }}</em>
               </div>
               <p>{{ message.content }}</p>
+              <div v-if="message.question?.options.length" class="exam-option-preview">
+                <span v-for="option in message.question.options" :key="option">{{ option }}</span>
+              </div>
               <div v-if="message.analysis" class="exam-analysis-card">
                 <strong>{{ message.analysis.score.toFixed(1) }}/{{ message.analysis.max_score.toFixed(1) }} 分</strong>
                 <p>正确答案：{{ answerText(message.analysis.correct_answer) }}</p>
@@ -529,6 +556,9 @@ onMounted(async () => {
               <em>{{ sourceText(record.question) }}</em>
             </div>
             <p>{{ record.question.prompt }}</p>
+            <div v-if="record.question.options.length" class="exam-option-preview">
+              <span v-for="option in record.question.options" :key="option">{{ option }}</span>
+            </div>
             <p class="detail-user-answer">用户回答：{{ record.user_answer || '未作答' }}</p>
             <div v-if="record.analysis" class="exam-analysis-card">
               <strong>{{ record.analysis.score.toFixed(1) }}/{{ record.analysis.max_score.toFixed(1) }} 分</strong>
