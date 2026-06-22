@@ -3,6 +3,7 @@ export interface HealthResponse { // `/health` 接口返回的数据结构
   qdrant: string // Qdrant 状态，例如 ok/unavailable
   collection_name: string // 当前使用的 Qdrant collection 名称
   collections: string[] // Qdrant 中已有的 collection 列表
+  collection_points: Record<string, number> // 每个 Qdrant collection 的真实向量点数量
 }
 
 export interface ChatResponse { // `/chat` 一次性接口返回的数据结构
@@ -277,6 +278,331 @@ export interface ExamSessionDetailResponse { // 考试详情响应
   questions: ExamQuestionRecord[] // 全部题目
 }
 
+export type TrainingResponseMode = 'stream' | 'blocking'
+
+export interface TrainingKnowledgeUploadPayload { // 销售训练知识上传请求
+  file: File // LMS 训练案例文件
+  sourceType?: string // 知识来源类型，一期默认 lms_case
+  profileType?: string // 客户画像类型
+  taskType?: string // 训练任务类型
+  industry?: string // 行业标签
+  difficulty?: string // 难度标签
+  visibilityDefault?: string // 通用切片默认可见范围
+  createdBy?: string // 上传人
+}
+
+export interface TrainingKnowledgeUploadResponse { // 销售训练知识入库结果
+  batch_id: string
+  status: string
+  chunk_count: number
+  point_count: number
+  source_file?: string | null
+  duplicate_of?: string | null
+  failed_chunks: string[]
+}
+
+export interface TrainingKnowledgeBatchResponse { // 训练资料上传批次
+  batch_id: string
+  source_type: string
+  source_file: string
+  file_path?: string | null
+  file_md5?: string | null
+  profile_type?: string | null
+  task_type?: string | null
+  industry?: string | null
+  difficulty?: string | null
+  visibility_default?: string | null
+  status: string
+  chunk_count: number
+  point_count: number
+  error_message?: string | null
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TrainingKnowledgeBatchListResponse { // 训练资料批次分页
+  items: TrainingKnowledgeBatchResponse[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface TrainingKnowledgeChunkResponse { // 训练知识切片
+  chunk_id: string
+  batch_id: string
+  case_part: string
+  visibility: string
+  chunk_text: string
+  metadata: Record<string, unknown>
+}
+
+export interface TrainingKnowledgeChunkListResponse { // 训练知识切片列表
+  batch_id: string
+  chunks: TrainingKnowledgeChunkResponse[]
+}
+
+export interface TrainingKnowledgePreviewResponse { // 训练资料原文件预览
+  batch: TrainingKnowledgeBatchResponse
+  preview_type: string
+  content: string
+  truncated: boolean
+}
+
+export interface TrainingKnowledgeDeleteResponse { // 训练资料删除结果
+  status: string
+  batch_id: string
+}
+
+export interface TrainingTraineeProfilePayload { // 学员画像输入
+  trainee_id: string
+  trainee_name: string
+  position_role: string
+  experience_level: string
+  task_goal: string
+  weakness_tags: string[]
+  student_portrait_other?: string
+}
+
+export interface TrainingRoleGeneratePayload { // 生成 AI 客户角色请求
+  plan_id?: string | null
+  trainee: TrainingTraineeProfilePayload
+  profile_type: string
+  selected_fields: Record<string, unknown>
+  scenario_description: string
+  extra_details: string
+  model_mode?: string | null
+}
+
+export interface TrainingScenarioPolishPayload { // AI 润色训练场景请求
+  profile_type: string
+  selected_fields: Record<string, unknown>
+  scenario_description: string
+  extra_details?: string
+  model_mode?: string | null
+}
+
+export interface TrainingScenarioPolishResponse { // AI 润色训练场景结果
+  polished_scenario: string
+  original_scenario: string
+}
+
+export interface TrainingSupplementQuestionOption { // 生成角色前补充问答选项
+  option_code: string
+  option_text: string
+}
+
+export interface TrainingSupplementQuestion { // 生成角色前补充问答题
+  question_id: string
+  question_no: number
+  question: string
+  options: TrainingSupplementQuestionOption[]
+  allow_other: boolean
+  dimension: string
+}
+
+export interface TrainingSupplementQuestionGenerateResponse { // 补充问答题生成结果
+  questions: TrainingSupplementQuestion[]
+}
+
+export interface TrainingRoleGenerateResponse { // AI 客户角色生成结果
+  profile_id: string
+  visible_profile: Record<string, unknown>
+  hidden_profile: Record<string, unknown>
+  role_profile: Record<string, unknown>
+  role_confirm_card: Record<string, unknown>
+  hidden_summary: string
+  retrieved_cases: Record<string, unknown>[]
+  knowledge_facts: string[]
+}
+
+export interface TrainingGoalStage { // 开放式训练目标阶段
+  stage_no: number
+  stage_name: string
+  core_goal: string
+  success_conditions: string[]
+  failure_conditions: string[]
+}
+
+export interface TrainingGoalSettingResponse { // 训练目标设置
+  setting_id: string
+  profile_id: string
+  training_mode: string
+  training_purpose: string
+  round_limit: number
+  stages: TrainingGoalStage[]
+  scoring_rules: Record<string, unknown>
+  status: string
+}
+
+export interface TrainingPlanCreatePayload { // 创建销售训练方案
+  plan_name: string
+  trainee: TrainingTraineeProfilePayload
+  profile_type: string
+  selected_fields: Record<string, unknown>
+  scenario_description: string
+  extra_details: string
+  model_mode?: string | null
+}
+
+export interface TrainingPlanUpdatePayload { // 修改销售训练方案
+  plan_name?: string
+  trainee?: TrainingTraineeProfilePayload
+  profile_type?: string
+  selected_fields?: Record<string, unknown>
+  scenario_description?: string
+  extra_details?: string
+  model_mode?: string | null
+  role_confirm_card?: Record<string, unknown>
+  visible_profile?: Record<string, unknown>
+  hidden_profile?: Record<string, unknown>
+  role_profile?: Record<string, unknown>
+  stages?: TrainingGoalStage[]
+  scoring_rules?: Record<string, unknown>
+}
+
+export interface TrainingPlanSummaryResponse { // 销售训练方案列表项
+  plan_id: string
+  plan_name: string
+  trainee_id: string
+  trainee_name: string
+  profile_type: string
+  model_mode?: string | null
+  role_status: string
+  goal_status: string
+  score_status: string
+  active_profile_id?: string | null
+  active_setting_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TrainingPlanListResponse { // 销售训练方案分页
+  items: TrainingPlanSummaryResponse[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface TrainingPlanDetailResponse { // 销售训练方案详情
+  plan: TrainingPlanSummaryResponse
+  trainee: Record<string, unknown>
+  selected_fields: Record<string, unknown>
+  scenario_description: string
+  extra_details: string
+  visible_profile: Record<string, unknown>
+  hidden_profile: Record<string, unknown>
+  role_profile: Record<string, unknown>
+  role_confirm_card: Record<string, unknown>
+  retrieved_cases: Record<string, unknown>[]
+  goal_setting?: TrainingGoalSettingResponse | null
+}
+
+export interface TrainingSessionStartPayload { // 开始训练会话请求
+  profile_id: string
+  setting_id: string
+  trainee_id: string
+  response_mode: TrainingResponseMode
+  model_mode?: string | null
+}
+
+export interface TrainingSessionResponse { // 训练会话
+  session_id: string
+  profile_id: string
+  setting_id: string
+  trainee_id: string
+  training_mode: string
+  response_mode: TrainingResponseMode
+  current_stage_no: number
+  status: string
+  round_limit: number
+  opening_message?: string | null
+}
+
+export interface TrainingTurnPayload { // 提交学员回复请求
+  message: string
+  response_mode: TrainingResponseMode
+  model_mode?: string | null
+}
+
+export interface TrainingTurnResponse { // AI 客户本轮回复
+  customer_reply: string
+  current_stage_no: number
+  stage_status: string
+  session_status: string
+  retrieved_chunk_ids: string[]
+  coach_analysis: Record<string, unknown>
+  response_seconds?: number | null
+}
+
+export interface TrainingScoreResponse { // 训练评分报告
+  score_id: string
+  session_id: string
+  total_score: number
+  level: string
+  is_passed: boolean
+  general_score: number
+  stage_score: number
+  penalty_score: number
+  report: Record<string, unknown>
+}
+
+export interface TrainingSessionSummaryResponse { // 训练历史摘要
+  session_id: string
+  trainee_id: string
+  training_mode: string
+  response_mode: TrainingResponseMode
+  status: string
+  round_limit: number
+  answered_count: number
+  total_score?: number | null
+  level?: string | null
+  started_at: string
+  ended_at?: string | null
+  updated_at: string
+}
+
+export interface TrainingSessionListResponse { // 训练历史分页
+  items: TrainingSessionSummaryResponse[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface TrainingTurnRecordResponse { // 训练复盘轮次
+  turn_id: string
+  session_id: string
+  role: string
+  content: string
+  round_no: number
+  stage_no: number
+  response_mode?: string | null
+  response_seconds?: number | null
+  retrieved_chunk_ids: string[]
+  stage_decision: Record<string, unknown>
+  coach_analysis: Record<string, unknown>
+  created_at: string
+}
+
+export interface TrainingSessionDetailResponse { // 训练复盘详情
+  session: TrainingSessionSummaryResponse
+  turns: TrainingTurnRecordResponse[]
+  visible_profile: Record<string, unknown>
+  hidden_profile: Record<string, unknown>
+  role_profile: Record<string, unknown>
+  role_confirm_card: Record<string, unknown>
+  goal_setting: Record<string, unknown>
+  knowledge_facts: string[]
+  score?: TrainingScoreResponse | null
+}
+
+export interface TrainingStreamHandlers { // 训练 SSE 事件回调
+  onRetrieval?: (payload: Record<string, unknown>) => void | Promise<void>
+  onDelta?: (content: string) => void | Promise<void>
+  onStageDecision?: (payload: Record<string, unknown>) => void | Promise<void>
+  onDone?: (payload: TrainingTurnResponse) => void | Promise<void>
+}
+
 // API_BASE_URL 有两个典型取值：
 // - 本地开发：通过 .env.development 配成 http://127.0.0.1:8000，绕过 Vite 代理，减少流式缓冲干扰。
 // - Docker/Nginx 部署：使用默认 /api，由 Nginx 把 /api 转发给后端 api 容器。
@@ -333,6 +659,10 @@ export function fetchHealth() { // 获取后端和 Qdrant 健康状态
 export function listDictionaries(dictionaryCode?: string) { // 查询系统字典表，支持按字典编码过滤
   const query = dictionaryCode ? `?dictionary_code=${encodeURIComponent(dictionaryCode)}` : ''
   return request<DictionaryGroupResponse[]>(`/dictionaries${query}`)
+}
+
+export function listTrainingProfileDictionaries() { // 查询销售训练画像字典，包含学员画像和客户画像
+  return request<DictionaryGroupResponse[]>('/training/profile-dictionaries')
 }
 
 export function createDictionaryGroup(payload: DictionaryGroupPayload) { // 新增父级字典
@@ -522,6 +852,224 @@ export function listExamSessions(page = 1, pageSize = 10, userId?: string, keywo
 
 export function getExamSessionDetail(sessionId: string) { // 查询考试详情
   return request<ExamSessionDetailResponse>(`/exam/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPayload) { // 上传销售训练知识并写入训练向量库
+  // 文件上传必须使用 FormData，让浏览器自动生成 multipart boundary。
+  const formData = new FormData()
+  formData.append('file', payload.file)
+  formData.append('source_type', payload.sourceType || 'lms_case')
+  formData.append('visibility_default', payload.visibilityDefault || 'visible')
+
+  if (payload.profileType) formData.append('profile_type', payload.profileType)
+  if (payload.taskType) formData.append('task_type', payload.taskType)
+  if (payload.industry) formData.append('industry', payload.industry)
+  if (payload.difficulty) formData.append('difficulty', payload.difficulty)
+  if (payload.createdBy) formData.append('created_by', payload.createdBy)
+
+  const response = await fetch(`${API_BASE_URL}/training/knowledge/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response)
+    throw new Error(message)
+  }
+
+  return response.json() as Promise<TrainingKnowledgeUploadResponse>
+}
+
+export function listTrainingKnowledgeChunks(batchId: string) { // 查看某次训练知识上传拆出的切片
+  return request<TrainingKnowledgeChunkListResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/chunks`)
+}
+
+export function previewTrainingKnowledgeBatch(batchId: string, maxChars = 30000) { // 预览上传保存的训练资料原文件
+  const params = new URLSearchParams({
+    max_chars: String(maxChars),
+  })
+  return request<TrainingKnowledgePreviewResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/preview?${params.toString()}`)
+}
+
+export function deleteTrainingKnowledgeBatch(batchId: string) { // 删除训练资料批次和对应向量点
+  return request<TrainingKnowledgeDeleteResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function listTrainingKnowledgeBatches(page = 1, pageSize = 10) { // 查询训练资料上传历史
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  return request<TrainingKnowledgeBatchListResponse>(`/training/knowledge/batches?${params.toString()}`)
+}
+
+export function createTrainingPlan(payload: TrainingPlanCreatePayload) { // 创建训练方案，名称后端校验唯一
+  return request<TrainingPlanDetailResponse>('/training/plans', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function listTrainingPlans(page = 1, pageSize = 8, keyword?: string) { // 查询训练方案列表
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (keyword?.trim()) params.set('keyword', keyword.trim())
+  return request<TrainingPlanListResponse>(`/training/plans?${params.toString()}`)
+}
+
+export function getTrainingPlanDetail(planId: string) { // 查看训练方案每一步详情
+  return request<TrainingPlanDetailResponse>(`/training/plans/${encodeURIComponent(planId)}`)
+}
+
+export function updateTrainingPlan(planId: string, payload: TrainingPlanUpdatePayload) { // 修改训练方案某一步
+  return request<TrainingPlanDetailResponse>(`/training/plans/${encodeURIComponent(planId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function generateTrainingRole(payload: TrainingRoleGeneratePayload) { // 根据学员画像和场景生成 AI 客户
+  return request<TrainingRoleGenerateResponse>('/training/profiles/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function polishTrainingScenario(payload: TrainingScenarioPolishPayload) { // 根据客户画像用 AI 润色训练场景
+  return request<TrainingScenarioPolishResponse>('/training/profiles/scenario/polish', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function generateTrainingSupplementQuestions(payload: TrainingRoleGeneratePayload) { // 生成 AI 客户前的补充问答题
+  return request<TrainingSupplementQuestionGenerateResponse>('/training/profiles/supplement-questions/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function generateTrainingGoalSetting(profileId: string, traineeId: string, modelMode?: string | null, planId?: string | null) { // 生成开放式训练目标和动态轮数
+  return request<TrainingGoalSettingResponse>(`/training/profiles/${encodeURIComponent(profileId)}/goal-settings/generate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      plan_id: planId || null,
+      trainee_id: traineeId,
+      training_mode: 'open',
+      model_mode: modelMode || null,
+    }),
+  })
+}
+
+export function startTrainingSession(payload: TrainingSessionStartPayload) { // 创建一次销售陪练会话
+  return request<TrainingSessionResponse>('/training/sessions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function listTrainingSessions(page = 1, pageSize = 8, traineeId?: string) { // 查询销售陪练历史
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (traineeId?.trim()) params.set('trainee_id', traineeId.trim())
+  return request<TrainingSessionListResponse>(`/training/sessions?${params.toString()}`)
+}
+
+export function getTrainingSessionDetail(sessionId: string) { // 查询销售陪练复盘详情
+  return request<TrainingSessionDetailResponse>(`/training/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function submitTrainingTurn(sessionId: string, payload: TrainingTurnPayload) { // 一次性提交学员回复并等待 AI 客户完整回复
+  return request<TrainingTurnResponse>(`/training/sessions/${encodeURIComponent(sessionId)}/turns?stream=false`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function generateTrainingFinalScore(sessionId: string, modelMode?: string | null) { // 结束训练并生成评分报告
+  const query = modelMode ? `?model_mode=${encodeURIComponent(modelMode)}` : ''
+  return request<TrainingScoreResponse>(`/training/sessions/${encodeURIComponent(sessionId)}/final-score${query}`, {
+    method: 'POST',
+  })
+}
+
+export async function submitTrainingTurnStream(
+  sessionId: string,
+  payload: TrainingTurnPayload,
+  handlers: TrainingStreamHandlers,
+  signal?: AbortSignal,
+) { // 流式提交学员回复，逐段接收 AI 客户话术
+  const response = await fetch(`${API_BASE_URL}/training/sessions/${encodeURIComponent(sessionId)}/turns?stream=true`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    },
+    body: JSON.stringify({ ...payload, response_mode: 'stream' }),
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    const message = await readErrorMessage(response)
+    throw new Error(message)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+
+  async function handleTrainingEvent(eventText: string) {
+    const eventName = eventText
+      .split(/\r?\n/)
+      .find((line) => line.startsWith('event:'))
+      ?.slice(6)
+      .trim()
+
+    const dataText = eventText
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+
+    if (!eventName || !dataText) return
+
+    const data = JSON.parse(dataText)
+    if (eventName === 'retrieval_done') {
+      await handlers.onRetrieval?.(data)
+    } else if (eventName === 'customer_delta') {
+      await handlers.onDelta?.(String(data.content || ''))
+    } else if (eventName === 'stage_decision') {
+      await handlers.onStageDecision?.(data)
+    } else if (eventName === 'turn_done') {
+      await handlers.onDone?.(data as TrainingTurnResponse)
+    } else if (eventName === 'error') {
+      throw new Error(String(data.error || '训练流式生成失败'))
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split(/\r?\n\r?\n/)
+    buffer = events.pop() || ''
+    for (const eventText of events) {
+      await handleTrainingEvent(eventText)
+    }
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    await handleTrainingEvent(buffer)
+  }
 }
 
 export function sendChat(

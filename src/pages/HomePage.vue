@@ -135,12 +135,13 @@ const dictionaryForm = ref<DictionaryFormState>({
 
 const indexedCount = computed(() => knowledgeFiles.value.filter((item) => item.status === 'indexed').length)
 const collectionCount = computed(() => new Set([...(health.value?.collections || []), ...knowledgeFiles.value.map((item) => item.collection_name)]).size)
+const totalVectorPointCount = computed(() => Object.values(health.value?.collection_points || {}).reduce((total, count) => total + Number(count || 0), 0))
 const dictionaryItemCount = computed(() => dictionaries.value.reduce((total, group) => total + countItems(group.items), 0))
 const latestConversation = computed(() => conversations.value[0])
 
 const cockpitCards = computed(() => [
   { title: '服务健康', value: serviceStatusLabel(health.value?.status), detail: `Qdrant ${serviceStatusLabel(health.value?.qdrant)}`, icon: ShieldCheck, tone: health.value?.status === 'ok' ? 'good' : 'warn' },
-  { title: '知识矩阵', value: `${indexedCount.value}/${knowledgeFiles.value.length}`, detail: '已索引 / 文件总数', icon: DatabaseZap, tone: 'blue' },
+  { title: '知识矩阵', value: `${indexedCount.value}/${knowledgeFiles.value.length}`, detail: `已索引 / 文件总数，向量 ${totalVectorPointCount.value}`, icon: DatabaseZap, tone: 'blue' },
   { title: '多库航道', value: collectionCount.value || 0, detail: '可用知识库 Collection', icon: Boxes, tone: 'cyan' },
   { title: '字典引擎', value: dictionaries.value.length, detail: `${dictionaryItemCount.value} 个字典项`, icon: FileText, tone: 'violet' },
   { title: '会话星轨', value: conversationTotal.value, detail: latestConversation.value?.title || '暂无最近会话', icon: Clock3, tone: 'amber' },
@@ -184,6 +185,7 @@ const knowledgeCollectionTabs = computed(() => ( // 知识库弹窗页签统计
       collectionName,
       total: files.length,
       indexed: files.filter((file) => file.status === 'indexed').length,
+      points: Number(health.value?.collection_points?.[collectionName] || 0),
     }
   })
 ))
@@ -192,6 +194,10 @@ const overviewKnowledgeFiles = computed(() => { // 首页概览按当前向量�
   if (!overviewActiveCollection.value) return knowledgeFiles.value
   return knowledgeFiles.value.filter((file) => file.collection_name === overviewActiveCollection.value)
 })
+
+const overviewActiveCollectionPoints = computed(() => (
+  Number(health.value?.collection_points?.[overviewActiveCollection.value] || 0)
+))
 
 const overviewPagedKnowledgeFiles = computed(() => { // 首页概览当前页文件
   const start = (overviewKnowledgePage.value - 1) * overviewKnowledgePageSize
@@ -423,6 +429,7 @@ async function refreshHealth() { // 刷新后端健康检查
       qdrant: 'unavailable',
       collection_name: 'agent',
       collections: [],
+      collection_points: {},
     }
   }
 }
@@ -838,7 +845,7 @@ onMounted(() => {
       <article class="dashboard-panel">
         <div class="panel-title panel-title-between">
           <span><DatabaseZap :size="18" />知识库概览</span>
-          <em>{{ overviewKnowledgeFiles.length }} 个文件</em>
+          <em>{{ overviewKnowledgeFiles.length }} 个文件 / {{ overviewActiveCollectionPoints }} 个向量</em>
         </div>
         <div class="overview-collection-tabs" role="tablist" aria-label="首页向量库列表">
           <button
@@ -852,7 +859,7 @@ onMounted(() => {
             @click="overviewActiveCollection = tab.collectionName"
           >
             <span>{{ tab.collectionName }}</span>
-            <em>{{ tab.indexed }}/{{ tab.total }}</em>
+            <em>文件 {{ tab.indexed }}/{{ tab.total }} · 向量 {{ tab.points }}</em>
           </button>
         </div>
         <div class="data-table-lite dashboard-knowledge-table">
@@ -864,7 +871,10 @@ onMounted(() => {
               <em>{{ file.collection_name }} / {{ file.status }}</em>
             </el-tooltip>
           </div>
-          <p v-if="knowledgeFiles.length === 0">暂无知识库文件</p>
+          <p v-if="knowledgeFiles.length === 0 && overviewActiveCollectionPoints === 0">暂无知识库文件</p>
+          <p v-else-if="overviewKnowledgeFiles.length === 0 && overviewActiveCollectionPoints > 0">
+            当前向量库有 {{ overviewActiveCollectionPoints }} 个向量点，但没有普通知识库文件记录，可能是销售训练库或其他专用库。
+          </p>
           <p v-else-if="overviewKnowledgeFiles.length === 0">当前向量库暂无文件</p>
         </div>
         <el-pagination

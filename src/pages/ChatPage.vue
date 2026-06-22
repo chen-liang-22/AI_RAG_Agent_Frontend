@@ -592,6 +592,7 @@ async function refreshHealth() { // 刷新后端健康状态
       qdrant: 'unavailable', // Qdrant 不可用
       collection_name: 'agent', // 默认 collection 名称
       collections: [], // collection 列表为空
+      collection_points: {}, // Qdrant 不可用时没有向量点统计
     }
     if (!selectedCollectionName.value) {
       selectedCollectionName.value = 'agent'

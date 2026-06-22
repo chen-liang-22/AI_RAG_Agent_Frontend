@@ -1,12 +1,13 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Bot, ClipboardCheck, LayoutDashboard, Moon, Sparkles, Sun } from 'lucide-vue-next'
+import { Bot, BrainCircuit, ClipboardCheck, LayoutDashboard, Moon, Sparkles, Sun } from 'lucide-vue-next'
 import ChatPage from './pages/ChatPage.vue'
 import ExamPage from './pages/ExamPage.vue'
 import HomePage from './pages/HomePage.vue'
+import SalesTrainingPage from './pages/SalesTrainingPage.vue'
 
 type ThemeMode = 'dark' | 'light'
-type MainPage = 'home' | 'chat' | 'exam'
+type MainPage = 'home' | 'chat' | 'exam' | 'salesTraining'
 
 const themeMode = ref<ThemeMode>(readInitialThemeMode())
 const activePage = ref<MainPage>('home')
@@ -16,6 +17,7 @@ const themeToggleIcon = computed(() => (themeMode.value === 'dark' ? Sun : Moon)
 const pages = [
   { key: 'home' as const, label: '首页', subLabel: '系统驾驶舱', icon: LayoutDashboard },
   { key: 'chat' as const, label: '智能客服', subLabel: 'RAG 问答', icon: Bot },
+  { key: 'salesTraining' as const, label: '销售陪练', subLabel: 'AI 客户训练', icon: BrainCircuit },
   { key: 'exam' as const, label: '问答考试', subLabel: '知识测评', icon: ClipboardCheck },
 ]
 
@@ -75,6 +77,7 @@ onMounted(() => {
     <section class="portal-content" :class="`page-${activePage}`">
       <HomePage v-if="activePage === 'home'" :theme-mode="themeMode" @open-chat-history="openChatHistory" />
       <ChatPage v-else-if="activePage === 'chat'" :theme-mode="themeMode" :history-request="chatHistoryRequest" />
+      <SalesTrainingPage v-else-if="activePage === 'salesTraining'" :theme-mode="themeMode" />
       <ExamPage v-else :theme-mode="themeMode" />
     </section>
   </main>
