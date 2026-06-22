@@ -48,8 +48,8 @@ onMounted(() => {
       <div class="portal-brand">
         <span class="portal-brand-mark"><Sparkles :size="22" /></span>
         <div>
-          <h1>AI RAG Agent</h1>
-          <p>知识中枢工作台</p>
+          <h1>知习台</h1>
+          <p>知识学习工作台</p>
         </div>
       </div>
 

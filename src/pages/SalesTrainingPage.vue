@@ -20,6 +20,7 @@ import {
   Network,
   Play,
   Radar,
+  RefreshCw,
   Route,
   Send,
   ShieldCheck,
@@ -40,6 +41,7 @@ import {
   generateTrainingSupplementQuestions,
   getTrainingPlanDetail,
   getTrainingSessionDetail,
+  listTrainingKnowledgeBatchVersions,
   listTrainingKnowledgeBatches,
   listTrainingKnowledgeChunks,
   listTrainingPlans,
@@ -47,6 +49,9 @@ import {
   listTrainingSessions,
   polishTrainingScenario,
   previewTrainingKnowledgeBatch,
+  publishTrainingKnowledgeBatch,
+  reparseTrainingKnowledgeBatch,
+  rollbackTrainingKnowledgeBatch,
   startTrainingSession,
   submitTrainingTurn,
   submitTrainingTurnStream,
@@ -61,6 +66,7 @@ import {
   type TrainingKnowledgeUploadResponse,
   type TrainingPlanDetailResponse,
   type TrainingPlanSummaryResponse,
+  type TrainingPlanUpdatePayload,
   type TrainingResponseMode,
   type TrainingRoleGenerateResponse,
   type TrainingScoreResponse,
@@ -69,13 +75,14 @@ import {
   type TrainingSessionResponse,
   type TrainingSupplementQuestion,
   type TrainingSupplementQuestionOption,
+  type TrainingTraineeProfilePayload,
   type TrainingTurnResponse,
 } from '../api'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
 
 type TrainingWorkspaceTab = 'knowledge' | 'setup' | 'chat' | 'review'
-type SetupFlowTab = 'role' | 'stage' | 'score'
+type SetupFlowTab = 'plan' | 'role' | 'stage' | 'score'
 type TrainingMessageRole = 'customer' | 'trainee' | 'system'
 
 interface TrainingNextAction {
@@ -168,6 +175,30 @@ interface TraineeProfileDraft {
   studentPortraitOther: string
 }
 
+interface PlanEditDraft {
+  planName: string
+  traineeId: string
+  traineeName: string
+  positionRole: string
+  experienceLevel: string
+  taskGoal: string
+  weaknessTags: string[]
+  studentPortraitOther: string
+  profileType: string
+  customerProfileValues: Record<string, ProfileFieldValue>
+  scenarioDescription: string
+  extraDetails: string
+  modelMode: string
+  roleConfirmCardJson: string
+  visibleProfileJson: string
+  hiddenProfileJson: string
+  roleProfileJson: string
+  trainingPurpose: string
+  roundLimit: number
+  stagesJson: string
+  scoringRulesJson: string
+}
+
 const selectedFile = ref<File | null>(null)
 const uploadFileInput = ref<HTMLInputElement | null>(null)
 const sourceType = ref('lms_case')
@@ -182,6 +213,12 @@ const loadingBatches = ref(false)
 const loadingChunks = ref(false)
 const trainingPreview = ref<TrainingKnowledgePreviewResponse | null>(null)
 const trainingPreviewVisible = ref(false)
+const versionDialogVisible = ref(false)
+const versionLoading = ref(false)
+const batchVersions = ref<TrainingKnowledgeBatchResponse[]>([])
+const activeVersionGroupId = ref('')
+const activeChunkSummary = ref<ChunkTypeSummary | null>(null)
+const chunkDetailVisible = ref(false)
 const previewingBatchId = ref('')
 const deletingBatchId = ref('')
 const supplementDialogVisible = ref(false)
@@ -210,7 +247,8 @@ const planKeyword = ref('')
 const selectedPlanDetail = ref<TrainingPlanDetailResponse | null>(null)
 const planDetailVisible = ref(false)
 const planEditVisible = ref(false)
-const planEditJson = ref('')
+const planEditAdvancedPanels = ref<string[]>([])
+const planEditDraft = ref<PlanEditDraft>(createEmptyPlanEditDraft())
 
 const roleResult = ref<TrainingRoleGenerateResponse | null>(null)
 const goalSetting = ref<TrainingGoalSettingResponse | null>(null)
@@ -227,9 +265,12 @@ const retrievedChunkIds = ref<string[]>([])
 const stageStatus = ref('未开始')
 const trainingWindow = ref<HTMLElement | null>(null)
 const activeWorkspaceTab = ref<TrainingWorkspaceTab>('setup')
-const activeSetupTab = ref<SetupFlowTab>('role')
+const activeSetupTab = ref<SetupFlowTab>('plan')
 
 const uploading = ref(false)
+const publishingBatchId = ref('')
+const rollingBackBatchId = ref('')
+const reparsingBatchId = ref('')
 const generatingRole = ref(false)
 const generatingGoal = ref(false)
 const startingSession = ref(false)
@@ -245,15 +286,32 @@ const savingPlanEdit = ref(false)
 const weaknessTags = computed(() => weaknessTagsValue.value.filter(Boolean))
 const currentUploadChunkCount = computed(() => uploadResult.value?.chunk_count ?? 0)
 const currentUploadPointCount = computed(() => uploadResult.value?.point_count ?? 0)
-const currentUploadStatus = computed(() => uploadResult.value?.status || '等待上传')
+const currentUploadStatus = computed(() => batchStatusLabel(uploadResult.value?.status || 'waiting'))
 const currentUploadDuplicateText = computed(() => uploadResult.value?.duplicate_of ? '已复用' : '未重复')
 const canClearUploadArea = computed(() => Boolean(selectedFile.value || uploadResult.value))
+const uploadQualityReport = computed(() => uploadResult.value?.quality_report || {})
+const uploadQualityWarnings = computed(() => safeList(uploadQualityReport.value.warnings))
+const uploadQualityMetrics = computed(() => (uploadQualityReport.value.metrics || {}) as Record<string, unknown>)
+const uploadQualitySplitText = computed(() => {
+  const splitter = String(uploadQualityReport.value.selected_splitter || '')
+  if (splitter === 'llm_fallback') return 'LLM 兜底切分'
+  if (uploadQualityReport.value.llm_fallback_attempted) return '规则切分，已尝试 LLM 兜底'
+  return '规则配置切分'
+})
+const uploadPublishValidation = computed(() => (
+  uploadQualityReport.value.publish_validation || null
+) as Record<string, unknown> | null)
+const canOpenRoleSetup = computed(() => Boolean(activePlan.value))
 const canOpenStageSetup = computed(() => Boolean(roleResult.value))
 const canOpenScoreSetup = computed(() => Boolean(goalSetting.value))
-const roleFlowStatusText = computed(() => roleResult.value ? '已生成' : '待生成')
+const planFlowStatusText = computed(() => activePlan.value ? '已创建' : '待创建')
+const roleFlowStatusText = computed(() => {
+  if (!activePlan.value) return '先建名称'
+  return roleResult.value ? '已生成' : '待生成'
+})
 const stageFlowStatusText = computed(() => goalSetting.value ? `${goalSetting.value.round_limit} 轮` : roleResult.value ? '待生成' : '先生成角色')
 const scoreFlowStatusText = computed(() => goalSetting.value ? '100 分' : '先生成训练阶段')
-const canGoPreviousSetupStep = computed(() => activeSetupTab.value !== 'role')
+const canGoPreviousSetupStep = computed(() => activeSetupTab.value !== 'plan')
 const trainingCockpitCards = computed(() => [
   {
     key: 'knowledge',
@@ -271,7 +329,7 @@ const trainingCockpitCards = computed(() => [
     detail: roleResult.value ? roleTitleText.value : '补充问答后生成客户角色',
     icon: Radar,
     tab: 'setup' as TrainingWorkspaceTab,
-    setupTab: 'role' as SetupFlowTab,
+    setupTab: activePlan.value ? 'role' as SetupFlowTab : 'plan' as SetupFlowTab,
     ready: Boolean(roleResult.value),
   },
   {
@@ -281,7 +339,7 @@ const trainingCockpitCards = computed(() => [
     detail: goalSetting.value && goalStage.value ? goalStage.value.core_goal : '确认角色后生成训练目标',
     icon: Target,
     tab: 'setup' as TrainingWorkspaceTab,
-    setupTab: 'stage' as SetupFlowTab,
+    setupTab: activePlan.value ? 'stage' as SetupFlowTab : 'plan' as SetupFlowTab,
     ready: Boolean(goalSetting.value),
   },
   {
@@ -317,6 +375,11 @@ const chunkTypeSummaries = computed<ChunkTypeSummary[]>(() => {
   }
   return Array.from(summaryMap.values())
 })
+const activeChunkTypeChunks = computed(() => {
+  const summary = activeChunkSummary.value
+  if (!summary) return []
+  return chunks.value.filter((chunk) => chunk.case_part === summary.casePart)
+})
 const answeredRounds = computed(() => messages.value.filter((item) => item.role === 'trainee').length)
 const progressPercent = computed(() => {
   const roundLimit = goalSetting.value?.round_limit || 0
@@ -344,11 +407,11 @@ const nextTrainingAction = computed<TrainingNextAction>(() => {
   }
   if (!activePlan.value) {
     return {
-      title: '创建训练方案',
-      detail: '保存学员画像、客户画像和场景描述，后续角色、阶段和评分都会围绕这个方案推进。',
-      actionText: '去创建方案',
+      title: '设置训练名称',
+      detail: '先创建或选择本次训练名称，再进入学员画像、客户画像和场景配置。',
+      actionText: '去设置名称',
       tab: 'setup',
-      setupTab: 'role',
+      setupTab: 'plan',
     }
   }
   if (!roleResult.value) {
@@ -490,6 +553,26 @@ const draftCustomerProfileDisplayPayload = computed<Record<string, string>>(() =
 const selectedProfileScenario = computed(() => String(selectedProfileTemplate.value?.metadata?.scenario_summary || '按客户画像字典动态生成字段'))
 const draftProfileScenario = computed(() => String(draftSelectedProfileTemplate.value?.metadata?.scenario_summary || '按客户画像字典动态生成字段'))
 const draftCustomerProfileFieldGroups = computed(() => groupCustomerProfileFields(draftCustomerProfileFields.value))
+const planEditSelectedProfileTemplate = computed(() => (
+  customerProfileTemplates.value.find((item) => item.item_code === planEditDraft.value.profileType)
+    || selectedProfileTemplate.value
+    || customerProfileTemplates.value[0]
+    || null
+))
+const planEditCustomerProfileFields = computed(() => customerProfileFieldsFromTemplate(
+  planEditSelectedProfileTemplate.value,
+  planEditDraft.value.customerProfileValues,
+))
+const planEditCustomerProfileDisplayPayload = computed<Record<string, string>>(() => {
+  const payload: Record<string, string> = {}
+  for (const field of planEditCustomerProfileFields.value) {
+    const value = planEditDraft.value.customerProfileValues[field.fieldKey] || field.defaultValue
+    payload[field.label] = customerFieldDisplayValue(field, value)
+  }
+  return payload
+})
+const planEditCustomerProfileFieldGroups = computed(() => groupCustomerProfileFields(planEditCustomerProfileFields.value))
+const planEditProfileScenario = computed(() => String(planEditSelectedProfileTemplate.value?.metadata?.scenario_summary || '按客户画像字典动态生成字段'))
 const positionRoleOptions = computed(() => traineePortraitOptions('position_role'))
 const experienceLevelOptions = computed(() => traineePortraitOptions('experience_level'))
 const taskGoalOptions = computed(() => traineePortraitOptions('task_goal'))
@@ -622,6 +705,112 @@ function uniqueList(items: string[]): string[] {
 
 function scorePoints(value: unknown): Record<string, unknown>[] {
   return asArray((value as Record<string, unknown> | undefined)?.points)
+}
+
+// 创建训练方案编辑草稿，避免详情页和新增页状态互相污染。
+function createEmptyPlanEditDraft(): PlanEditDraft {
+  return {
+    planName: '',
+    traineeId: '',
+    traineeName: '',
+    positionRole: '',
+    experienceLevel: '',
+    taskGoal: '',
+    weaknessTags: [],
+    studentPortraitOther: '',
+    profileType: DEFAULT_CUSTOMER_PROFILE_TYPE,
+    customerProfileValues: {},
+    scenarioDescription: '',
+    extraDetails: '',
+    modelMode: 'high',
+    roleConfirmCardJson: '{}',
+    visibleProfileJson: '{}',
+    hiddenProfileJson: '{}',
+    roleProfileJson: '{}',
+    trainingPurpose: '',
+    roundLimit: 0,
+    stagesJson: '[]',
+    scoringRulesJson: '{}',
+  }
+}
+
+// 把对象序列化成稳定可读的 JSON，供高级配置区编辑复杂结构。
+function toPrettyJson(value: unknown, fallback: unknown) {
+  const source = hasDisplayValue(value) ? value : fallback
+  return JSON.stringify(source, null, 2)
+}
+
+// 解析高级配置 JSON，带上字段名便于用户定位格式错误。
+function parseJsonField<T>(value: string, label: string): T {
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    throw new Error(`${label} JSON 格式不正确`)
+  }
+}
+
+// 为详情页过滤出真正的客户画像字段，隐藏内部组合字段。
+function planDetailCustomerEntries(detail: TrainingPlanDetailResponse): Array<[string, unknown]> {
+  return objectEntries(detail.selected_fields).filter(([key]) => !['画像类型', '学员画像'].includes(key))
+}
+
+// 获取训练方案保存时使用的客户画像模板中文名。
+function planDetailProfileTemplateName(detail: TrainingPlanDetailResponse): string {
+  return displayValue(
+    detail.selected_fields.画像类型
+      || customerProfileTemplates.value.find((item) => item.item_code === detail.plan.profile_type)?.item_name
+      || detail.plan.profile_type,
+  )
+}
+
+// 获取训练方案保存时使用的学员名称。
+function planDetailTraineeName(detail: TrainingPlanDetailResponse): string {
+  return displayValue(detail.trainee.trainee_name || detail.plan.trainee_name || '销售学员')
+}
+
+// 获取训练方案保存时使用的学员角色标签。
+function planDetailTraineeRole(detail: TrainingPlanDetailResponse): string {
+  return traineeOptionLabel('position_role', String(detail.trainee.position_role || ''))
+}
+
+// 生成详情页学员画像展示项，统一把编码转成字典中文名。
+function planDetailTraineeItems(detail: TrainingPlanDetailResponse): ProfileField[] {
+  const trainee = detail.trainee
+  const weaknessValues = Array.isArray(trainee.weakness_tags) ? trainee.weakness_tags.map(String) : []
+  return [
+    { label: '学员编号', value: trainee.trainee_id },
+    { label: '学员名称', value: trainee.trainee_name },
+    { label: '职位角色', value: traineeOptionLabel('position_role', String(trainee.position_role || '')) },
+    { label: '经验等级', value: traineeOptionLabel('experience_level', String(trainee.experience_level || '')) },
+    { label: '任务目标', value: traineeOptionLabel('task_goal', String(trainee.task_goal || '')) },
+    { label: '短板标签', value: weaknessValues.map((tag) => traineeOptionLabel('weakness_tag', tag)) },
+    { label: '其他说明', value: trainee.student_portrait_other || '无' },
+  ].filter((item) => hasDisplayValue(item.value))
+}
+
+// 获取详情页所有训练阶段，兼容后端未生成阶段的情况。
+function planDetailStages(detail: TrainingPlanDetailResponse): Record<string, unknown>[] {
+  return asArray(detail.goal_setting?.stages)
+}
+
+// 获取详情页通用评分维度。
+function planDetailGeneralDimensions(detail: TrainingPlanDetailResponse): Record<string, unknown>[] {
+  return asArray(detail.goal_setting?.scoring_rules?.general_dimensions)
+}
+
+// 获取详情页阶段评分维度，不足时沿用页面里的兜底展示规则。
+function planDetailStageDimensions(detail: TrainingPlanDetailResponse): Record<string, unknown>[] {
+  return expandStageScoringDimensions(asArray(detail.goal_setting?.scoring_rules?.stage_dimensions))
+}
+
+// 详情页展示检索案例时优先识别常见字段，字段缺失时仍保留摘要。
+function planCaseTitle(item: Record<string, unknown>, index: number) {
+  return displayValue(item.source_file || item.case_title || item.title || item.file_name || `案例 ${index + 1}`)
+}
+
+// 详情页展示检索案例摘要，避免整段 JSON 淹没页面。
+function planCaseSummary(item: Record<string, unknown>) {
+  return displayValue(item.content || item.chunk_text || item.text || item.summary || item)
 }
 
 function expandStageScoringDimensions(dimensions: Record<string, unknown>[]): Record<string, unknown>[] {
@@ -869,6 +1058,35 @@ function chunkUsageLabel(code: string) {
   })
 }
 
+function batchStatusLabel(code: string) {
+  return dictionaryItemLabel([], code, {
+    waiting: '等待上传',
+    parsing: '解析中',
+    pending_review: '待确认',
+    embedding: '发布中',
+    published: '已发布',
+    archived: '历史版本',
+    parsing_failed: '解析失败',
+    deleted: '已删除',
+    duplicated: '重复复用',
+  })
+}
+
+function qualityLevelLabel(level: unknown) {
+  return displayOptionLabel(String(level || ''), {
+    good: '质量较好',
+    review: '建议复核',
+    poor: '质量较低',
+  })
+}
+
+function qualityLevelClass(level: unknown) {
+  const value = String(level || '')
+  if (value === 'good') return 'good'
+  if (value === 'poor') return 'poor'
+  return 'review'
+}
+
 function chunkSummaryTitle(summary: ChunkTypeSummary) {
   const partDescription = dictionaryItemDescription(casePartItems.value, summary.casePart)
   return [
@@ -877,6 +1095,37 @@ function chunkSummaryTitle(summary: ChunkTypeSummary) {
     `包含分片：${summary.count} 条`,
     `模型用途：${summary.usageLabels.join('、')}`,
   ].filter(Boolean).join('\n')
+}
+
+// 打开某一类训练知识切片详情，按当前切片顺序展示全部内容。
+function openChunkSummaryDetail(summary: ChunkTypeSummary) {
+  activeChunkSummary.value = summary
+  chunkDetailVisible.value = true
+}
+
+// 生成切片详情里的辅助信息，方便确认来源、用途和结构化元数据。
+function chunkDetailMeta(chunk: TrainingKnowledgeChunkResponse, index: number) {
+  const metadata = chunk.metadata || {}
+  const pageNumbers = valueList(metadata.page_numbers).join('、')
+  const headingLevels = valueList(metadata.heading_levels).join('、')
+  const outlineTitles = valueList(metadata.outline_titles).join(' / ')
+  const splitter = String(metadata.splitter || '').trim()
+  const blockRange = [metadata.start_block_index, metadata.end_block_index]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join('-')
+  return [
+    `第 ${index + 1} 条`,
+    `用途：${chunkUsageLabel(chunk.visibility)}`,
+    metadata.source_file ? `来源：${metadata.source_file}` : '',
+    metadata.task_id ? `任务：${metadata.task_id}` : '',
+    metadata.section_title ? `标题：${metadata.section_title}` : '',
+    pageNumbers ? `页码：${pageNumbers}` : '',
+    blockRange ? `段落：${blockRange}` : '',
+    headingLevels ? `标题级别：${headingLevels}` : '',
+    outlineTitles ? `目录：${outlineTitles}` : '',
+    splitter ? `切分：${splitter}` : '',
+  ].filter(Boolean).join(' · ')
 }
 
 function firstOptionValue(fieldCode: string, fallback: string): string {
@@ -1034,6 +1283,7 @@ async function createPlanFromCurrentInput() {
       ...currentPlanPayload(),
     })
     hydratePlanDetail(detail)
+    activeSetupTab.value = 'role'
     await refreshTrainingPlans()
     ElMessage.success('训练方案已创建')
   } catch (error) {
@@ -1072,7 +1322,6 @@ function hydratePlanDetail(detail: TrainingPlanDetailResponse) {
   } : null
   goalSetting.value = detail.goal_setting || null
   scoreResult.value = null
-  activeSetupTab.value = roleResult.value ? (goalSetting.value ? 'score' : 'stage') : 'role'
 }
 
 function restoreCustomerProfileValuesFromDisplay(selectedFields: Record<string, unknown>) {
@@ -1096,6 +1345,74 @@ function restoreCustomerProfileValuesFromDisplay(selectedFields: Record<string, 
   customerProfileValues.value = restored
 }
 
+// 从训练方案详情里还原客户画像表单值，编辑弹窗使用独立副本。
+function restoredCustomerProfileValuesForDetail(detail: TrainingPlanDetailResponse): Record<string, ProfileFieldValue> {
+  const restored: Record<string, ProfileFieldValue> = { ...customerProfileValues.value }
+  const template = customerProfileTemplates.value.find((item) => item.item_code === detail.plan.profile_type)
+    || selectedProfileTemplate.value
+  for (let pass = 0; pass < 2; pass += 1) {
+    const fields = customerProfileFieldsFromTemplate(template, restored)
+    for (const field of fields) {
+      const rawValue = detail.selected_fields[field.label]
+      if (!hasDisplayValue(rawValue)) continue
+      const textValue = displayValue(rawValue)
+      if (isMultiSelectField(field)) {
+        const parts = textValue.split(/[、,，]/).map((item) => item.trim()).filter(Boolean)
+        restored[field.fieldKey] = parts.map((item) => field.options.find((option) => option.label === item || option.value === item)?.value || item)
+      } else if (field.options.length) {
+        restored[field.fieldKey] = field.options.find((option) => option.label === textValue || option.value === textValue)?.value || textValue
+      } else {
+        restored[field.fieldKey] = textValue
+      }
+    }
+  }
+  return restored
+}
+
+// 切换编辑弹窗里的客户画像类型，并补齐新模板默认值。
+function applyPlanEditProfileTemplate(templateCode: string) {
+  planEditDraft.value.profileType = templateCode
+  syncPlanEditCustomerProfileDefaults()
+}
+
+// 确保编辑弹窗当前模板的所有动态字段都有默认值。
+function syncPlanEditCustomerProfileDefaults() {
+  for (const field of planEditCustomerProfileFields.value) {
+    if (!planEditDraft.value.customerProfileValues[field.fieldKey]) {
+      planEditDraft.value.customerProfileValues[field.fieldKey] = defaultCustomerFieldValue(field)
+    }
+  }
+}
+
+// 组装编辑弹窗里的学员画像请求体。
+function planEditTraineePayload(): TrainingTraineeProfilePayload {
+  return {
+    trainee_id: planEditDraft.value.traineeId.trim() || 'trainee-001',
+    trainee_name: planEditDraft.value.traineeName.trim() || '销售学员',
+    position_role: planEditDraft.value.positionRole,
+    experience_level: planEditDraft.value.experienceLevel,
+    task_goal: planEditDraft.value.taskGoal,
+    weakness_tags: planEditDraft.value.weaknessTags.filter(Boolean),
+    student_portrait_other: planEditDraft.value.studentPortraitOther.trim(),
+  }
+}
+
+// 组装编辑弹窗里的客户画像快照，保持和新增训练方案一致的字段结构。
+function planEditSelectedFieldsPayload() {
+  const trainee = planEditTraineePayload()
+  return {
+    画像类型: planEditSelectedProfileTemplate.value?.item_name || planEditDraft.value.profileType,
+    学员画像: {
+      职位角色: traineeOptionLabel('position_role', trainee.position_role),
+      经验等级: traineeOptionLabel('experience_level', trainee.experience_level),
+      任务目标: traineeOptionLabel('task_goal', trainee.task_goal),
+      短板标签: trainee.weakness_tags.map((tag) => traineeOptionLabel('weakness_tag', tag)),
+      其他: trainee.student_portrait_other || '无',
+    },
+    ...planEditCustomerProfileDisplayPayload.value,
+  }
+}
+
 async function refreshTrainingPlans() {
   loadingPlans.value = true
   try {
@@ -1113,6 +1430,7 @@ async function openTrainingPlan(plan: TrainingPlanSummaryResponse) {
   try {
     const detail = await getTrainingPlanDetail(plan.plan_id)
     hydratePlanDetail(detail)
+    activeSetupTab.value = 'role'
     planDetailVisible.value = true
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练方案详情读取失败')
@@ -1124,19 +1442,34 @@ function openPlanEditDialog() {
     ElMessage.warning('请先选择训练方案')
     return
   }
-  planEditJson.value = JSON.stringify({
-    plan_name: selectedPlanDetail.value.plan.plan_name,
-    trainee: selectedPlanDetail.value.trainee,
-    selected_fields: selectedPlanDetail.value.selected_fields,
-    scenario_description: selectedPlanDetail.value.scenario_description,
-    extra_details: selectedPlanDetail.value.extra_details,
-    role_confirm_card: selectedPlanDetail.value.role_confirm_card,
-    visible_profile: selectedPlanDetail.value.visible_profile,
-    hidden_profile: selectedPlanDetail.value.hidden_profile,
-    role_profile: selectedPlanDetail.value.role_profile,
-    stages: selectedPlanDetail.value.goal_setting?.stages,
-    scoring_rules: selectedPlanDetail.value.goal_setting?.scoring_rules,
-  }, null, 2)
+  const detail = selectedPlanDetail.value
+  const trainee = detail.trainee
+  const weaknessValues = Array.isArray(trainee.weakness_tags) ? trainee.weakness_tags.map(String) : []
+  planEditDraft.value = {
+    planName: detail.plan.plan_name,
+    traineeId: String(trainee.trainee_id || traineeId.value),
+    traineeName: String(trainee.trainee_name || traineeName.value),
+    positionRole: String(trainee.position_role || positionRole.value),
+    experienceLevel: String(trainee.experience_level || experienceLevel.value),
+    taskGoal: String(trainee.task_goal || taskGoal.value),
+    weaknessTags: weaknessValues,
+    studentPortraitOther: String(trainee.student_portrait_other || ''),
+    profileType: detail.plan.profile_type || profileType.value,
+    customerProfileValues: restoredCustomerProfileValuesForDetail(detail),
+    scenarioDescription: detail.scenario_description,
+    extraDetails: detail.extra_details || '',
+    modelMode: detail.plan.model_mode || modelMode.value,
+    roleConfirmCardJson: toPrettyJson(detail.role_confirm_card, {}),
+    visibleProfileJson: toPrettyJson(detail.visible_profile, {}),
+    hiddenProfileJson: toPrettyJson(detail.hidden_profile, {}),
+    roleProfileJson: toPrettyJson(detail.role_profile, {}),
+    trainingPurpose: detail.goal_setting?.training_purpose || '',
+    roundLimit: Number(detail.goal_setting?.round_limit || 0),
+    stagesJson: toPrettyJson(detail.goal_setting?.stages, []),
+    scoringRulesJson: toPrettyJson(detail.goal_setting?.scoring_rules, {}),
+  }
+  syncPlanEditCustomerProfileDefaults()
+  planEditAdvancedPanels.value = []
   planEditVisible.value = true
 }
 
@@ -1145,11 +1478,35 @@ async function savePlanEdit() {
     ElMessage.warning('请先选择训练方案')
     return
   }
-  let payload: Record<string, unknown>
+  if (!planEditDraft.value.planName.trim()) {
+    ElMessage.warning('请填写训练名称')
+    return
+  }
+  if (!planEditDraft.value.scenarioDescription.trim()) {
+    ElMessage.warning('请填写训练场景描述')
+    return
+  }
+  let payload: TrainingPlanUpdatePayload
   try {
-    payload = JSON.parse(planEditJson.value)
-  } catch {
-    ElMessage.error('JSON 格式不正确')
+    payload = {
+      plan_name: planEditDraft.value.planName.trim(),
+      trainee: planEditTraineePayload(),
+      profile_type: planEditDraft.value.profileType,
+      selected_fields: planEditSelectedFieldsPayload(),
+      scenario_description: planEditDraft.value.scenarioDescription.trim(),
+      extra_details: planEditDraft.value.extraDetails.trim(),
+      model_mode: planEditDraft.value.modelMode,
+      role_confirm_card: parseJsonField<Record<string, unknown>>(planEditDraft.value.roleConfirmCardJson, '确认卡片'),
+      visible_profile: parseJsonField<Record<string, unknown>>(planEditDraft.value.visibleProfileJson, '可见画像'),
+      hidden_profile: parseJsonField<Record<string, unknown>>(planEditDraft.value.hiddenProfileJson, '隐藏画像'),
+      role_profile: parseJsonField<Record<string, unknown>>(planEditDraft.value.roleProfileJson, '扮演画像'),
+      training_purpose: planEditDraft.value.trainingPurpose.trim() || undefined,
+      round_limit: planEditDraft.value.roundLimit ? Number(planEditDraft.value.roundLimit) : undefined,
+      stages: parseJsonField(planEditDraft.value.stagesJson, '训练阶段'),
+      scoring_rules: parseJsonField<Record<string, unknown>>(planEditDraft.value.scoringRulesJson, '评分规则'),
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '高级配置 JSON 格式不正确')
     return
   }
   savingPlanEdit.value = true
@@ -1400,10 +1757,22 @@ function goPreviousSetupStep() {
   }
   if (activeSetupTab.value === 'stage') {
     activeSetupTab.value = 'role'
+    return
+  }
+  if (activeSetupTab.value === 'role') {
+    activeSetupTab.value = 'plan'
   }
 }
 
 function goNextSetupStep() {
+  if (activeSetupTab.value === 'plan') {
+    if (!activePlan.value) {
+      ElMessage.warning('请先创建或选择训练名称')
+      return
+    }
+    activeSetupTab.value = 'role'
+    return
+  }
   if (activeSetupTab.value === 'role') {
     if (!roleResult.value) {
       ElMessage.warning('请先生成 AI 客户角色')
@@ -1424,15 +1793,35 @@ function goNextSetupStep() {
 function openCockpitCard(card: { tab: TrainingWorkspaceTab; setupTab?: SetupFlowTab }) {
   activeWorkspaceTab.value = card.tab
   if (card.setupTab) {
-    activeSetupTab.value = card.setupTab
+    openSetupTab(card.setupTab)
   }
 }
 
 function openTrainingAction(action: TrainingNextAction) {
   activeWorkspaceTab.value = action.tab
   if (action.setupTab) {
-    activeSetupTab.value = action.setupTab
+    openSetupTab(action.setupTab)
   }
+}
+
+// 统一控制创建训练向导的跳转，避免越过训练名称、角色、阶段等前置步骤。
+function openSetupTab(tab: SetupFlowTab) {
+  if (tab === 'role' && !activePlan.value) {
+    ElMessage.warning('请先创建或选择训练名称')
+    activeSetupTab.value = 'plan'
+    return
+  }
+  if (tab === 'stage' && !roleResult.value) {
+    ElMessage.warning(activePlan.value ? '请先生成 AI 客户角色' : '请先创建或选择训练名称')
+    activeSetupTab.value = activePlan.value ? 'role' : 'plan'
+    return
+  }
+  if (tab === 'score' && !goalSetting.value) {
+    ElMessage.warning(roleResult.value ? '请先生成训练阶段' : activePlan.value ? '请先生成 AI 客户角色' : '请先创建或选择训练名称')
+    activeSetupTab.value = roleResult.value ? 'stage' : activePlan.value ? 'role' : 'plan'
+    return
+  }
+  activeSetupTab.value = tab
 }
 
 function addSystemMessage(content: string) {
@@ -1451,6 +1840,7 @@ async function scrollToBottom() {
 }
 
 async function uploadKnowledge() {
+  // 第一步：前端先校验是否已经选择文件，避免空文件请求打到后端。
   if (!selectedFile.value) {
     ElMessage.warning('请先选择 LMS 案例文件')
     return
@@ -1458,15 +1848,19 @@ async function uploadKnowledge() {
 
   uploading.value = true
   try {
+    // 第二步：把 File 对象封装成 FormData，调用后端 /training/knowledge/upload。
+    // 后端会完成文件保存、MD5 去重、解析切片和质量评估；确认发布前不会写入 Qdrant。
     uploadResult.value = await uploadTrainingKnowledge({
       file: selectedFile.value,
       sourceType: sourceType.value,
     })
+    // 第三步：上传成功后立即拉取本批次切片，让右侧切片概览能马上展示。
     const response = await listTrainingKnowledgeChunks(uploadResult.value.batch_id)
     chunks.value = response.chunks
     activeBatchId.value = uploadResult.value.batch_id
+    // 第四步：异步刷新上传批次列表，不阻塞当前成功提示。
     void refreshTrainingBatches()
-    ElMessage.success(uploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练知识已写入向量库')
+    ElMessage.success(uploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练资料预览已生成，请确认后发布')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练知识上传失败')
   } finally {
@@ -1474,10 +1868,150 @@ async function uploadKnowledge() {
   }
 }
 
+async function publishTrainingBatch(batchId: string) {
+  // 人工确认发布后才会生成 embedding 并写入 sales_training_cases，避免低质量切片直接污染向量库。
+  publishingBatchId.value = batchId
+  try {
+    const result = await publishTrainingKnowledgeBatch(batchId)
+    if (uploadResult.value?.batch_id === batchId) {
+      uploadResult.value = {
+        ...uploadResult.value,
+        status: result.status,
+        chunk_count: result.chunk_count,
+        point_count: result.point_count,
+        quality_report: result.quality_report,
+      }
+    }
+    await refreshTrainingBatches()
+    const response = await listTrainingKnowledgeChunks(batchId)
+    chunks.value = response.chunks
+    activeBatchId.value = batchId
+    if (versionDialogVisible.value) {
+      await loadBatchVersions(batchId)
+    }
+    ElMessage.success('训练资料已发布并写入向量库')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料发布失败')
+  } finally {
+    publishingBatchId.value = ''
+  }
+}
+
+async function rollbackTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
+  // 回滚会把该历史版本重新写入 Qdrant，并让同版本组其他版本退出训练检索。
+  try {
+    await ElMessageBox.confirm(
+      `确定回滚到「${batch.source_file}」的 V${batch.version_no || 1} 吗？当前版本会变成历史版本。`,
+      '回滚训练资料版本',
+      {
+        confirmButtonText: '确认回滚',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
+  rollingBackBatchId.value = batch.batch_id
+  try {
+    const result = await rollbackTrainingKnowledgeBatch(batch.batch_id)
+    if (uploadResult.value?.batch_id === batch.batch_id) {
+      uploadResult.value = {
+        ...uploadResult.value,
+        status: result.status,
+        chunk_count: result.chunk_count,
+        point_count: result.point_count,
+        quality_report: result.quality_report,
+      }
+    }
+    await refreshTrainingBatches()
+    const response = await listTrainingKnowledgeChunks(batch.batch_id)
+    chunks.value = response.chunks
+    activeBatchId.value = batch.batch_id
+    if (versionDialogVisible.value) {
+      await loadBatchVersions(batch.batch_id)
+    }
+    ElMessage.success(`已回滚到 V${result.version_no}`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料回滚失败')
+  } finally {
+    rollingBackBatchId.value = ''
+  }
+}
+
+async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | string) {
+  // 人工重切只允许用于未发布批次，后端会重新生成 SQLite 预览切片，不会写入 Qdrant。
+  const batchId = typeof batch === 'string' ? batch : batch.batch_id
+  const sourceFile = typeof batch === 'string' ? uploadResult.value?.source_file || '当前资料' : batch.source_file
+  try {
+    await ElMessageBox.confirm(
+      `确定使用 LLM 重新切分「${sourceFile}」吗？重切后需要再次人工确认发布。`,
+      'LLM 重新切分',
+      {
+        confirmButtonText: '确认重切',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
+  reparsingBatchId.value = batchId
+  try {
+    const result = await reparseTrainingKnowledgeBatch(batchId, true)
+    if (uploadResult.value?.batch_id === batchId) {
+      uploadResult.value = {
+        ...uploadResult.value,
+        status: result.status,
+        chunk_count: result.chunk_count,
+        point_count: result.point_count,
+        source_file: result.source_file ?? uploadResult.value.source_file,
+        quality_report: result.quality_report,
+      }
+    }
+    await refreshTrainingBatches()
+    const response = await listTrainingKnowledgeChunks(batchId)
+    chunks.value = response.chunks
+    activeBatchId.value = batchId
+    if (versionDialogVisible.value) {
+      await loadBatchVersions(batchId)
+    }
+    ElMessage.success('LLM 重新切分完成，请检查切片后再发布')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料重新切分失败')
+  } finally {
+    reparsingBatchId.value = ''
+  }
+}
+
+async function loadBatchVersions(batchId: string) {
+  // 版本链用于展示同一份资料的全部历史版本，后续回滚和查看切片都从这里进入。
+  versionLoading.value = true
+  try {
+    const response = await listTrainingKnowledgeBatchVersions(batchId)
+    activeVersionGroupId.value = response.version_group_id
+    batchVersions.value = response.items
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料版本链读取失败')
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+async function openBatchVersions(batch: TrainingKnowledgeBatchResponse) {
+  // 打开版本弹窗时立即拉取最新版本链，避免列表里的状态滞后。
+  versionDialogVisible.value = true
+  await loadBatchVersions(batch.batch_id)
+}
+
 async function refreshTrainingBatches() {
   loadingBatches.value = true
   try {
+    // 资料管理左侧列表只展示未删除批次，后端按更新时间倒序分页。
     const response = await listTrainingKnowledgeBatches(batchPage.value, 6)
+    // 删除最后一页最后一条数据后，当前页可能为空；这里自动回退一页。
     if (response.items.length === 0 && response.total > 0 && batchPage.value > 1) {
       batchPage.value -= 1
       await refreshTrainingBatches()
@@ -1496,6 +2030,7 @@ async function refreshTrainingBatches() {
 }
 
 async function openTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
+  // 点击某个批次时，只切换当前批次和切片列表，不会重新解析文件。
   activeBatchId.value = batch.batch_id
   loadingChunks.value = true
   try {
@@ -1509,6 +2044,7 @@ async function openTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
 }
 
 async function previewTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
+  // 预览读取的是服务端保存的原文件，再由后端解析成文本；不会重新写向量库。
   previewingBatchId.value = batch.batch_id
   try {
     trainingPreview.value = await previewTrainingKnowledgeBatch(batch.batch_id)
@@ -1521,6 +2057,7 @@ async function previewTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
 }
 
 async function deleteTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
+  // 删除前先二次确认，因为后端会同步删除该批次在 Qdrant 中的向量点。
   try {
     await ElMessageBox.confirm(
       `确定删除训练资料「${batch.source_file}」吗？删除后会移除对应向量点。`,
@@ -1537,6 +2074,7 @@ async function deleteTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
 
   deletingBatchId.value = batch.batch_id
   try {
+    // 后端采用“Qdrant 删除向量 + SQLite 批次软删除”的方式。
     await deleteTrainingKnowledgeBatch(batch.batch_id)
     ElMessage.success('训练资料已删除')
     if (activeBatchId.value === batch.batch_id) {
@@ -1587,6 +2125,7 @@ async function generateRole(extraDetailText = extraDetails.value) {
   generatingRole.value = true
   try {
     roleResult.value = await generateTrainingRole(buildRoleGeneratePayload(extraDetailText))
+    activeSetupTab.value = 'role'
     goalSetting.value = null
     activeSession.value = null
     scoreResult.value = null
@@ -1595,9 +2134,10 @@ async function generateRole(extraDetailText = extraDetails.value) {
     if (activePlan.value) {
       const detail = await getTrainingPlanDetail(activePlan.value.plan_id)
       hydratePlanDetail(detail)
+      activeSetupTab.value = 'role'
       await refreshTrainingPlans()
     }
-    ElMessage.success('AI 客户角色已生成，请确认后点击下一步')
+    ElMessage.success('AI 客户角色已生成，请人工审核后点击下一步')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : 'AI 客户角色生成失败')
   } finally {
@@ -1617,13 +2157,14 @@ async function generateGoal() {
     if (activePlan.value) {
       const detail = await getTrainingPlanDetail(activePlan.value.plan_id)
       hydratePlanDetail(detail)
+      activeSetupTab.value = 'stage'
       await refreshTrainingPlans()
     }
     activeSession.value = null
     scoreResult.value = null
     messages.value = []
     isReviewMode.value = false
-    ElMessage.success('训练阶段已生成，请确认后点击下一步')
+    ElMessage.success('训练阶段已生成，请人工审核后点击下一步')
     activeWorkspaceTab.value = 'setup'
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练目标生成失败')
@@ -1954,6 +2495,8 @@ onMounted(() => {
     <section class="training-flow-strip" aria-label="销售陪练流程">
       <span :class="{ done: batchTotal > 0, active: activeWorkspaceTab === 'knowledge' }">资料入库</span>
       <i />
+      <span :class="{ done: Boolean(activePlan), active: activeWorkspaceTab === 'setup' && activeSetupTab === 'plan' }">训练名称</span>
+      <i />
       <span :class="{ done: Boolean(roleResult), active: activeWorkspaceTab === 'setup' && activeSetupTab === 'role' }">客户角色</span>
       <i />
       <span :class="{ done: Boolean(goalSetting), active: activeWorkspaceTab === 'setup' && activeSetupTab === 'stage' }">训练目标</span>
@@ -2001,16 +2544,16 @@ onMounted(() => {
           <input ref="uploadFileInput" type="file" accept=".docx,.pdf,.txt" @change="onFileChange(($event.target as HTMLInputElement).files?.[0])" />
           <UploadCloud :size="30" />
           <strong>{{ selectedFile?.name || '选择 LMS 案例文件' }}</strong>
-          <span>上传后写入 sales_training_cases，重复文件会按 MD5 自动复用。</span>
+          <span>上传后先生成切片预览和质量报告，人工确认后才写入 sales_training_cases。</span>
         </div>
         <el-button class="tech-button primary full" :icon="UploadCloud" :loading="uploading" @click="uploadKnowledge">
-          上传并写入训练库
+          上传并生成预览
         </el-button>
         <div v-if="uploadResult" class="training-upload-feedback">
           <div class="training-upload-result" :class="{ duplicated: Boolean(uploadResult.duplicate_of) }">
             <BadgeCheck :size="16" />
             <div>
-              <strong>{{ uploadResult.duplicate_of ? '资料已存在，已复用历史批次' : '资料已保存并完成入库' }}</strong>
+              <strong>{{ uploadResult.duplicate_of ? '资料已存在，已复用历史批次' : uploadResult.status === 'published' ? '资料已发布并完成入库' : '资料已保存，等待确认发布' }}</strong>
               <span>{{ uploadResult.source_file || '训练资料' }} · {{ uploadResult.chunk_count }} 切片 · 批次 {{ uploadResult.batch_id }}</span>
             </div>
           </div>
@@ -2019,6 +2562,53 @@ onMounted(() => {
             <div><strong>{{ currentUploadPointCount }}</strong><span>向量点</span></div>
             <div><strong>{{ currentUploadStatus }}</strong><span>入库状态</span></div>
             <div><strong>{{ currentUploadDuplicateText }}</strong><span>重复校验</span></div>
+          </div>
+          <div v-if="!uploadResult.duplicate_of && uploadQualityReport.score !== undefined" class="training-quality-card" :class="qualityLevelClass(uploadQualityReport.level)">
+            <div>
+              <strong>{{ uploadQualityReport.score }} 分</strong>
+              <span>{{ qualityLevelLabel(uploadQualityReport.level) }} · {{ uploadQualityReport.summary }}</span>
+            </div>
+            <div class="quality-metric-row">
+              <span>案例 {{ displayValue(uploadQualityMetrics.case_count ?? 0) }}</span>
+              <span>切片 {{ displayValue(uploadQualityMetrics.chunk_count ?? 0) }}</span>
+              <span>最大 {{ displayValue(uploadQualityMetrics.max_chunk_chars ?? 0) }} 字</span>
+            </div>
+            <div class="quality-metric-row">
+              <span>{{ uploadQualitySplitText }}</span>
+              <span v-if="uploadQualityReport.llm_fallback_attempted">
+                规则 {{ displayValue(uploadQualityReport.rule_score ?? '-') }} 分
+              </span>
+              <span v-if="uploadQualityReport.llm_score !== undefined">
+                LLM {{ displayValue(uploadQualityReport.llm_score) }} 分
+              </span>
+            </div>
+            <div v-if="uploadPublishValidation" class="quality-validation-row">
+              <strong>{{ uploadPublishValidation.passed ? '发布验证通过' : '发布验证需检查' }}</strong>
+              <span>
+                {{ uploadPublishValidation.summary }}
+                命中率 {{ displayValue(uploadPublishValidation.hit_ratio ?? 0) }}
+              </span>
+            </div>
+            <ul v-if="uploadQualityWarnings.length">
+              <li v-for="warning in uploadQualityWarnings" :key="warning">{{ warning }}</li>
+            </ul>
+            <el-button
+              v-if="uploadResult.status === 'pending_review'"
+              class="tech-button primary full"
+              :loading="publishingBatchId === uploadResult.batch_id"
+              @click="publishTrainingBatch(uploadResult.batch_id)"
+            >
+              确认发布到训练库
+            </el-button>
+            <el-button
+              v-if="uploadResult.status === 'pending_review'"
+              class="tech-button full"
+              :icon="Sparkles"
+              :loading="reparsingBatchId === uploadResult.batch_id"
+              @click="reparseTrainingBatch(uploadResult.batch_id)"
+            >
+              LLM 重新切分
+            </el-button>
           </div>
         </div>
       </section>
@@ -2039,7 +2629,10 @@ onMounted(() => {
             >
               <div class="batch-item-main">
                 <strong>{{ batch.source_file }}</strong>
-                <span>{{ batch.status }} · {{ batch.chunk_count }} 切片 · {{ batch.point_count }} 向量点</span>
+                <span>
+                  V{{ batch.version_no || 1 }} · {{ batch.is_current ? '当前版本' : batchStatusLabel(batch.status) }}
+                  · {{ batch.chunk_count }} 切片 · {{ batch.point_count }} 向量点
+                </span>
                 <em>{{ formatTime(batch.updated_at) }}</em>
               </div>
               <div class="batch-item-meta">
@@ -2047,6 +2640,41 @@ onMounted(() => {
                 <code>{{ batch.file_md5 ? batch.file_md5.slice(0, 10) : '未记录' }}</code>
               </div>
               <div class="batch-action-row" @click.stop>
+                <el-button
+                  v-if="batch.status === 'pending_review'"
+                  class="batch-icon-button"
+                  :icon="BadgeCheck"
+                  :loading="publishingBatchId === batch.batch_id"
+                  @click="publishTrainingBatch(batch.batch_id)"
+                >
+                  发布
+                </el-button>
+                <el-button
+                  v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed'"
+                  class="batch-icon-button"
+                  :icon="Sparkles"
+                  :loading="reparsingBatchId === batch.batch_id"
+                  @click="reparseTrainingBatch(batch)"
+                >
+                  重切
+                </el-button>
+                <el-button
+                  v-if="batch.status === 'archived'"
+                  class="batch-icon-button"
+                  :icon="RefreshCw"
+                  :loading="rollingBackBatchId === batch.batch_id"
+                  @click="rollbackTrainingBatch(batch)"
+                >
+                  回滚
+                </el-button>
+                <el-button
+                  v-if="batch.version_group_id"
+                  class="batch-icon-button"
+                  :icon="Route"
+                  @click="openBatchVersions(batch)"
+                >
+                  版本
+                </el-button>
                 <el-button
                   class="batch-icon-button"
                   :icon="Eye"
@@ -2079,10 +2707,19 @@ onMounted(() => {
             />
           </div>
           <div class="chunk-summary-list large" v-loading="loadingChunks">
-            <article v-for="summary in chunkTypeSummaries" :key="summary.casePart">
+            <article
+              v-for="summary in chunkTypeSummaries"
+              :key="summary.casePart"
+              class="clickable"
+              role="button"
+              tabindex="0"
+              @click="openChunkSummaryDetail(summary)"
+              @keydown.enter.prevent="openChunkSummaryDetail(summary)"
+              @keydown.space.prevent="openChunkSummaryDetail(summary)"
+            >
               <div :title="chunkSummaryTitle(summary)">
                 <strong>{{ summary.label }}</strong>
-                <span>{{ summary.count }} 条分片</span>
+                <button type="button" @click.stop="openChunkSummaryDetail(summary)">{{ summary.count }} 条分片</button>
               </div>
               <p>{{ summary.sampleText }}</p>
               <footer>
@@ -2098,56 +2735,28 @@ onMounted(() => {
       </section>
     </section>
 
-    <section v-show="activeWorkspaceTab === 'setup'" class="training-workspace">
+    <section
+      v-show="activeWorkspaceTab === 'setup'"
+      class="training-workspace"
+      :class="{ 'plan-step-workspace': activeSetupTab === 'plan' }"
+    >
       <aside class="training-left-panel">
-        <section class="training-panel training-plan-panel">
+        <section v-if="activePlan" class="training-panel active-plan-brief">
           <div class="panel-title panel-title-between">
-            <span><Route :size="16" /> 训练方案</span>
-            <em>{{ activePlan ? '已选择' : '先创建' }}</em>
+            <span><Route :size="16" /> 当前训练</span>
+            <em>已选择</em>
           </div>
-          <div class="training-plan-create">
-            <el-input v-model="planName" placeholder="输入唯一训练名称" clearable />
-            <el-button class="tech-button primary" :loading="creatingPlan" @click="createPlanFromCurrentInput">
-              创建
-            </el-button>
-          </div>
-          <div v-if="activePlan" class="active-plan-card">
+          <div class="active-plan-card">
             <strong>{{ activePlan.plan_name }}</strong>
             <span>角色：{{ activePlan.role_status }} · 阶段：{{ activePlan.goal_status }} · 评分：{{ activePlan.score_status }}</span>
             <div>
               <el-button text @click="planDetailVisible = true">查看详情</el-button>
-              <el-button text @click="openPlanEditDialog">修改</el-button>
+              <el-button text @click="openSetupTab('plan')">切换</el-button>
             </div>
           </div>
-          <div class="training-plan-filter">
-            <el-input v-model="planKeyword" placeholder="搜索训练名称" clearable @keyup.enter="refreshTrainingPlans" />
-            <el-button class="tech-button compact" :loading="loadingPlans" @click="refreshTrainingPlans">刷新</el-button>
-          </div>
-          <div class="training-plan-list" v-loading="loadingPlans">
-            <button
-              v-for="plan in trainingPlans"
-              :key="plan.plan_id"
-              type="button"
-              :class="{ active: activePlan?.plan_id === plan.plan_id }"
-              @click="openTrainingPlan(plan)"
-            >
-              <strong>{{ plan.plan_name }}</strong>
-              <span>{{ formatTime(plan.updated_at) }} · {{ plan.role_status }}/{{ plan.goal_status }}/{{ plan.score_status }}</span>
-            </button>
-            <span v-if="trainingPlans.length === 0">暂无训练方案</span>
-          </div>
-          <el-pagination
-            v-if="planTotal > 6"
-            v-model:current-page="planPage"
-            small
-            layout="prev, pager, next"
-            :page-size="6"
-            :total="planTotal"
-            @current-change="refreshTrainingPlans"
-          />
         </section>
 
-        <section class="training-panel profile-summary-panel">
+        <section v-if="activePlan && activeSetupTab !== 'plan'" class="training-panel profile-summary-panel">
           <div class="panel-title panel-title-between">
             <span><UserRoundCheck :size="16" /> 学员画像</span>
             <em>{{ traineeName }}</em>
@@ -2179,39 +2788,119 @@ onMounted(() => {
 
       <section class="training-main-panel">
         <section class="setup-flow-tabs" aria-label="创建训练步骤">
-          <div class="setup-step-card" :class="{ active: activeSetupTab === 'role', done: roleResult }">
+          <button
+            type="button"
+            class="setup-step-card"
+            :class="{ active: activeSetupTab === 'plan', done: activePlan }"
+            @click="openSetupTab('plan')"
+          >
+            <Route :size="16" />
+            <span>
+              <strong>训练名称</strong>
+              <em>{{ planFlowStatusText }}</em>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="setup-step-card"
+            :class="{ active: activeSetupTab === 'role', done: roleResult, locked: !canOpenRoleSetup }"
+            @click="openSetupTab('role')"
+          >
             <Sparkles :size="16" />
             <span>
-              <strong>角色生成</strong>
+              <strong>角色场景</strong>
               <em>{{ roleFlowStatusText }}</em>
             </span>
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
             class="setup-step-card"
             :class="{ active: activeSetupTab === 'stage', done: goalSetting, locked: !canOpenStageSetup }"
+            @click="openSetupTab('stage')"
           >
             <Gauge :size="16" />
             <span>
               <strong>训练阶段</strong>
               <em>{{ stageFlowStatusText }}</em>
             </span>
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
             class="setup-step-card"
             :class="{ active: activeSetupTab === 'score', done: goalSetting, locked: !canOpenScoreSetup }"
+            @click="openSetupTab('score')"
           >
             <Trophy :size="16" />
             <span>
               <strong>评分设置</strong>
               <em>{{ scoreFlowStatusText }}</em>
             </span>
-          </div>
+          </button>
         </section>
 
         <section class="setup-flow-content">
+          <article v-show="activeSetupTab === 'plan'" class="training-panel training-plan-panel">
+            <div class="panel-title panel-title-between">
+              <span><Route :size="16" /> 训练名称</span>
+              <em>{{ activePlan ? '已选择' : '第一步' }}</em>
+            </div>
+            <div class="plan-step-layout">
+              <section class="plan-step-create">
+                <strong>新建一场训练</strong>
+                <span>训练名称可以重复，系统会用不同的训练编号区分历史记录。</span>
+                <div class="training-plan-create">
+                  <el-input v-model="planName" placeholder="输入训练名称，例如：海外 BD 异议处理" clearable />
+                  <el-button class="tech-button primary" :loading="creatingPlan" @click="createPlanFromCurrentInput">
+                    创建训练
+                  </el-button>
+                </div>
+                <p>创建后再进入学员画像、客户画像、场景描述和模型档位设置。</p>
+              </section>
+              <section class="plan-step-list">
+                <div class="training-plan-filter">
+                  <el-input v-model="planKeyword" placeholder="搜索训练名称" clearable @keyup.enter="refreshTrainingPlans" />
+                  <el-button class="tech-button compact" :loading="loadingPlans" @click="refreshTrainingPlans">刷新</el-button>
+                </div>
+                <div class="training-plan-list" v-loading="loadingPlans">
+                  <button
+                    v-for="plan in trainingPlans"
+                    :key="plan.plan_id"
+                    type="button"
+                    :class="{ active: activePlan?.plan_id === plan.plan_id }"
+                    @click="openTrainingPlan(plan)"
+                  >
+                    <strong>{{ plan.plan_name }}</strong>
+                    <span>{{ formatTime(plan.updated_at) }} · {{ plan.role_status }}/{{ plan.goal_status }}/{{ plan.score_status }}</span>
+                  </button>
+                  <span v-if="trainingPlans.length === 0">暂无训练方案</span>
+                </div>
+                <el-pagination
+                  v-if="planTotal > 6"
+                  v-model:current-page="planPage"
+                  size="small"
+                  layout="prev, pager, next"
+                  :page-size="6"
+                  :total="planTotal"
+                  @current-change="refreshTrainingPlans"
+                />
+              </section>
+            </div>
+            <div v-if="activePlan" class="setup-flow-actions">
+              <el-button class="tech-button ghost" :icon="ArrowLeft" disabled>
+                上一步
+              </el-button>
+              <div>
+                <strong>训练名称已确定</strong>
+                <span>下一步配置学员画像、客户画像、场景描述，再生成 AI 客户。</span>
+              </div>
+              <el-button class="tech-button primary" :icon="ArrowRight" @click="goNextSetupStep">
+                下一步
+              </el-button>
+            </div>
+          </article>
           <article v-show="activeSetupTab === 'role'" class="training-panel role-card">
             <div class="panel-title panel-title-between">
-              <span><Radar :size="16" /> AI 客户角色</span>
+              <span><Radar :size="16" /> 角色场景</span>
               <em>{{ roleResult?.profile_id ? '已确认' : '待生成' }}</em>
             </div>
             <template v-if="roleResult">
@@ -2383,7 +3072,7 @@ onMounted(() => {
 
       </section>
 
-      <aside class="training-right-panel">
+      <aside v-if="activePlan && activeSetupTab !== 'plan'" class="training-right-panel">
         <section class="training-panel customer-profile-panel profile-summary-panel" v-loading="loadingProfileDictionaries">
           <div class="panel-title panel-title-between">
             <span><Radar :size="16" /> 客户画像</span>
@@ -2594,61 +3283,223 @@ onMounted(() => {
     <el-dialog
       v-model="planDetailVisible"
       title="训练方案详情"
-      width="980px"
+      width="1120px"
       class="profile-config-dialog training-plan-dialog"
       destroy-on-close
     >
       <section v-if="selectedPlanDetail" class="plan-detail-body">
         <div class="plan-detail-head">
-          <strong>{{ selectedPlanDetail.plan.plan_name }}</strong>
-          <span>
-            角色：{{ selectedPlanDetail.plan.role_status }} ·
-            阶段：{{ selectedPlanDetail.plan.goal_status }} ·
-            评分：{{ selectedPlanDetail.plan.score_status }}
-          </span>
+          <div>
+            <strong>{{ selectedPlanDetail.plan.plan_name }}</strong>
+            <span>方案编号：{{ selectedPlanDetail.plan.plan_id }} · 更新时间：{{ formatTime(selectedPlanDetail.plan.updated_at) }}</span>
+          </div>
+          <div class="plan-status-strip">
+            <span>角色：{{ selectedPlanDetail.plan.role_status }}</span>
+            <span>阶段：{{ selectedPlanDetail.plan.goal_status }}</span>
+            <span>评分：{{ selectedPlanDetail.plan.score_status }}</span>
+            <span>模型：{{ displayOptionLabel(selectedPlanDetail.plan.model_mode || 'high', { high: '高质量', medium: '均衡', low: '低延迟' }) }}</span>
+          </div>
         </div>
-        <div class="profile-section-grid">
-          <section class="profile-section">
-            <b>第一步：输入信息</b>
-            <dl>
-              <dt>学员</dt>
-              <dd>{{ displayValue(selectedPlanDetail.trainee.trainee_name) }}</dd>
-              <dt>画像类型</dt>
-              <dd>{{ selectedPlanDetail.plan.profile_type }}</dd>
-              <dt>场景描述</dt>
-              <dd>{{ selectedPlanDetail.scenario_description }}</dd>
-              <dt>补充细节</dt>
-              <dd>{{ selectedPlanDetail.extra_details || '无' }}</dd>
-            </dl>
-          </section>
-          <section class="profile-section">
-            <b>第二步：AI 客户角色</b>
-            <dl>
-              <dt>角色</dt>
-              <dd>{{ displayValue(selectedPlanDetail.role_confirm_card.角色名称 || selectedPlanDetail.role_confirm_card.role_name || '未生成') }}</dd>
-              <dt>摘要</dt>
-              <dd>{{ displayValue(selectedPlanDetail.role_confirm_card.角色摘要 || selectedPlanDetail.role_profile.角色简介 || '未生成') }}</dd>
-            </dl>
-          </section>
-          <section class="profile-section">
-            <b>第三步：训练阶段</b>
-            <dl>
-              <dt>轮数</dt>
-              <dd>{{ selectedPlanDetail.goal_setting?.round_limit || '未生成' }}</dd>
-              <dt>目标</dt>
-              <dd>{{ selectedPlanDetail.goal_setting?.stages?.[0]?.core_goal || '未生成' }}</dd>
-            </dl>
-          </section>
-          <section class="profile-section">
-            <b>第四步：评分规则</b>
-            <dl>
-              <dt>总分</dt>
-              <dd>{{ selectedPlanDetail.goal_setting ? '100 分' : '未生成' }}</dd>
-              <dt>阶段维度</dt>
-              <dd>{{ selectedPlanDetail.goal_setting ? asArray(selectedPlanDetail.goal_setting.scoring_rules.stage_dimensions).length : 0 }} 个</dd>
-            </dl>
-          </section>
+        <div class="plan-snapshot-overview">
+          <article>
+            <span>适用学员</span>
+            <strong>{{ planDetailTraineeName(selectedPlanDetail) }}</strong>
+            <em>{{ selectedPlanDetail.plan.trainee_id }} · {{ planDetailTraineeRole(selectedPlanDetail) }}</em>
+          </article>
+          <article>
+            <span>客户画像模板</span>
+            <strong>{{ planDetailProfileTemplateName(selectedPlanDetail) }}</strong>
+            <em>画像编码：{{ selectedPlanDetail.plan.profile_type }}</em>
+          </article>
+          <article>
+            <span>方案快照</span>
+            <strong>每个训练独立保存</strong>
+            <em>修改本方案不会覆盖其他训练方案</em>
+          </article>
         </div>
+
+        <section class="plan-detail-section">
+          <header>
+            <span>第一步</span>
+            <strong>学员画像</strong>
+            <em>与新增页面一致展示完整学员输入</em>
+          </header>
+          <div class="plan-detail-grid">
+            <article v-for="item in planDetailTraineeItems(selectedPlanDetail)" :key="item.label" class="plan-detail-item">
+              <span>{{ item.label }}</span>
+              <strong>{{ displayValue(item.value) }}</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="plan-detail-section">
+          <header>
+            <span>第一步</span>
+            <strong>客户画像与场景</strong>
+            <em>{{ displayValue(selectedPlanDetail.selected_fields.画像类型 || selectedPlanDetail.plan.profile_type) }}</em>
+          </header>
+          <div class="plan-chip-row">
+            <span>画像编码：{{ selectedPlanDetail.plan.profile_type }}</span>
+            <span>模型档位：{{ displayOptionLabel(selectedPlanDetail.plan.model_mode || 'high', { high: '高质量', medium: '均衡', low: '低延迟' }) }}</span>
+          </div>
+          <div class="plan-detail-grid">
+            <article
+              v-for="[key, value] in planDetailCustomerEntries(selectedPlanDetail)"
+              :key="key"
+              class="plan-detail-item"
+            >
+              <span>{{ key }}</span>
+              <strong>{{ displayValue(value) }}</strong>
+            </article>
+            <article class="plan-detail-item wide">
+              <span>场景描述</span>
+              <strong>{{ selectedPlanDetail.scenario_description }}</strong>
+            </article>
+            <article class="plan-detail-item wide">
+              <span>补充细节</span>
+              <strong>{{ selectedPlanDetail.extra_details || '无' }}</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="plan-detail-section">
+          <header>
+            <span>第二步</span>
+            <strong>AI 客户角色</strong>
+            <em>{{ hasDisplayValue(selectedPlanDetail.role_confirm_card) ? '已生成' : '未生成' }}</em>
+          </header>
+          <div v-if="hasDisplayValue(selectedPlanDetail.role_confirm_card) || hasDisplayValue(selectedPlanDetail.role_profile)" class="plan-object-grid">
+            <article class="plan-object-card">
+              <b>确认卡片</b>
+              <dl>
+                <template v-for="[key, value] in objectEntries(selectedPlanDetail.role_confirm_card)" :key="`confirm-${key}`">
+                  <dt>{{ key }}</dt>
+                  <dd>{{ displayValue(value) }}</dd>
+                </template>
+              </dl>
+            </article>
+            <article class="plan-object-card">
+              <b>可见画像</b>
+              <dl>
+                <template v-for="[key, value] in objectEntries(selectedPlanDetail.visible_profile)" :key="`visible-${key}`">
+                  <dt>{{ key }}</dt>
+                  <dd>{{ displayValue(value) }}</dd>
+                </template>
+              </dl>
+            </article>
+            <article class="plan-object-card">
+              <b>隐藏画像</b>
+              <dl>
+                <template v-for="[key, value] in objectEntries(selectedPlanDetail.hidden_profile)" :key="`hidden-${key}`">
+                  <dt>{{ key }}</dt>
+                  <dd>{{ displayValue(value) }}</dd>
+                </template>
+              </dl>
+            </article>
+            <article class="plan-object-card">
+              <b>扮演画像</b>
+              <dl>
+                <template v-for="[key, value] in objectEntries(selectedPlanDetail.role_profile)" :key="`role-${key}`">
+                  <dt>{{ key }}</dt>
+                  <dd>{{ displayValue(value) }}</dd>
+                </template>
+              </dl>
+            </article>
+          </div>
+          <div v-else class="training-empty compact">
+            <BrainCircuit :size="24" />
+            <span>当前方案还没有生成 AI 客户角色。</span>
+          </div>
+          <div v-if="selectedPlanDetail.retrieved_cases.length" class="plan-case-list">
+            <b>生成角色引用案例</b>
+            <article v-for="(item, index) in selectedPlanDetail.retrieved_cases.slice(0, 6)" :key="`case-${index}`">
+              <strong>{{ planCaseTitle(item, index) }}</strong>
+              <p>{{ compactText(planCaseSummary(item), 150) }}</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="plan-detail-section">
+          <header>
+            <span>第三步</span>
+            <strong>训练阶段</strong>
+            <em>{{ selectedPlanDetail.goal_setting ? `${selectedPlanDetail.goal_setting.round_limit} 轮` : '未生成' }}</em>
+          </header>
+          <template v-if="selectedPlanDetail.goal_setting">
+            <div class="plan-chip-row">
+              <span>训练方式：{{ selectedPlanDetail.goal_setting.training_mode }}</span>
+              <span>训练宗旨：{{ selectedPlanDetail.goal_setting.training_purpose }}</span>
+            </div>
+            <div class="plan-stage-list">
+              <article v-for="(stage, index) in planDetailStages(selectedPlanDetail)" :key="`detail-stage-${index}`" class="plan-stage-card">
+                <header>
+                  <em>第 {{ stage.stage_no || index + 1 }} 阶段</em>
+                  <strong>{{ displayValue(stage.stage_name || '开放式训练') }}</strong>
+                </header>
+                <p class="plan-stage-goal">
+                  <Target :size="16" />
+                  <span>{{ displayValue(stage.core_goal || '未填写核心目标') }}</span>
+                </p>
+                <div class="condition-grid">
+                  <div>
+                    <b>达成条件</b>
+                    <p v-for="item in valueList(stage.success_conditions)" :key="`success-${index}-${item}`">{{ item }}</p>
+                  </div>
+                  <div>
+                    <b>失败条件</b>
+                    <p v-for="item in valueList(stage.failure_conditions)" :key="`failure-${index}-${item}`">{{ item }}</p>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </template>
+          <div v-else class="training-empty compact">
+            <Gauge :size="24" />
+            <span>当前方案还没有生成训练阶段。</span>
+          </div>
+        </section>
+
+        <section class="plan-detail-section">
+          <header>
+            <span>第四步</span>
+            <strong>评分规则</strong>
+            <em>{{ selectedPlanDetail.goal_setting ? '100 分' : '未生成' }}</em>
+          </header>
+          <template v-if="selectedPlanDetail.goal_setting">
+            <div class="score-rule-summary">
+              <strong>通用能力 40 分</strong>
+              <span>{{ planDetailGeneralDimensions(selectedPlanDetail).length }} 个维度</span>
+              <strong>阶段能力 60 分</strong>
+              <span>{{ planDetailStageDimensions(selectedPlanDetail).length }} 个维度</span>
+            </div>
+            <div class="score-rule-list plan-score-list">
+              <section
+                v-for="dimension in planDetailGeneralDimensions(selectedPlanDetail)"
+                :key="`detail-general-${String(dimension.dimension_name)}`"
+                class="score-rule-card"
+              >
+                <b>{{ dimension.dimension_name }} · {{ dimension.score }}分</b>
+                <p v-for="point in scorePoints(dimension)" :key="String(point.point_name)">
+                  {{ point.point_name }}：{{ point.score }}分 · {{ point.description }}
+                </p>
+              </section>
+              <section
+                v-for="dimension in planDetailStageDimensions(selectedPlanDetail)"
+                :key="`detail-stage-score-${String(dimension.dimension_name)}`"
+                class="score-rule-card stage"
+              >
+                <b>{{ dimension.dimension_name }} · {{ dimension.score }}分</b>
+                <p v-for="point in scorePoints(dimension)" :key="String(point.point_name)">
+                  {{ point.point_name }}：{{ point.score }}分 · {{ point.description }}
+                </p>
+              </section>
+            </div>
+          </template>
+          <div v-else class="training-empty compact">
+            <Trophy :size="24" />
+            <span>生成训练阶段后会展示评分规则。</span>
+          </div>
+        </section>
       </section>
       <template #footer>
         <el-button @click="planDetailVisible = false">关闭</el-button>
@@ -2659,17 +3510,361 @@ onMounted(() => {
     <el-dialog
       v-model="planEditVisible"
       title="修改训练方案"
-      width="980px"
+      width="1120px"
       class="profile-config-dialog training-plan-dialog"
       destroy-on-close
     >
       <section class="plan-edit-body">
-        <p>可修改训练名称、输入信息、角色、阶段或评分规则。保存后，后端会按依赖关系标记后续步骤是否需要重新生成。</p>
-        <el-input v-model="planEditJson" type="textarea" :autosize="{ minRows: 18, maxRows: 28 }" />
+        <div class="plan-edit-note">
+          <ShieldCheck :size="17" />
+          <span>
+            当前编辑的是“{{ planEditDraft.traineeName || '销售学员' }}”
+            使用“{{ planEditSelectedProfileTemplate?.item_name || planEditDraft.profileType }}”生成的独立训练方案。
+            修改学员画像、客户画像或场景后，本方案的角色、阶段和评分会标记为需重新生成，其他训练方案不受影响。
+          </span>
+        </div>
+
+        <section class="plan-edit-section">
+          <header>
+            <span>基础信息</span>
+            <strong>方案和模型</strong>
+          </header>
+          <div class="training-form-grid two">
+            <label>
+              <span>训练名称</span>
+              <el-input v-model="planEditDraft.planName" maxlength="80" show-word-limit />
+            </label>
+            <label>
+              <span>模型档位</span>
+              <el-select v-model="planEditDraft.modelMode">
+                <el-option label="高质量" value="high" />
+                <el-option label="均衡" value="medium" />
+                <el-option label="低延迟" value="low" />
+              </el-select>
+            </label>
+          </div>
+        </section>
+
+        <section class="plan-edit-section">
+          <header>
+            <span>第一步</span>
+            <strong>学员画像</strong>
+          </header>
+          <div class="training-form-grid two">
+            <label>
+              <span>学员编号</span>
+              <el-input v-model="planEditDraft.traineeId" />
+            </label>
+            <label>
+              <span>学员名称</span>
+              <el-input v-model="planEditDraft.traineeName" />
+            </label>
+            <label>
+              <span>职位角色</span>
+              <el-select v-model="planEditDraft.positionRole" filterable>
+                <el-option v-for="option in positionRoleOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </label>
+            <label>
+              <span>经验等级</span>
+              <el-select v-model="planEditDraft.experienceLevel" filterable>
+                <el-option v-for="option in experienceLevelOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </label>
+            <label>
+              <span>任务目标</span>
+              <el-select v-model="planEditDraft.taskGoal" filterable>
+                <el-option v-for="option in taskGoalOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </label>
+            <label>
+              <span>短板标签</span>
+              <el-select
+                v-model="planEditDraft.weaknessTags"
+                multiple
+                filterable
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="请选择短板标签"
+              >
+                <el-option v-for="option in weaknessTagOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </label>
+            <label class="wide">
+              <span>其他说明</span>
+              <el-input
+                v-model="planEditDraft.studentPortraitOther"
+                type="textarea"
+                :autosize="{ minRows: 2, maxRows: 4 }"
+                placeholder="补充学员背景、近期训练重点或特殊说明"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section class="plan-edit-section">
+          <header>
+            <span>第一步</span>
+            <strong>客户画像</strong>
+            <em>{{ planEditSelectedProfileTemplate?.item_name || planEditDraft.profileType }}</em>
+          </header>
+          <div class="profile-template-switch dialog-template-switch plan-edit-template-switch" role="tablist" aria-label="编辑客户画像类型">
+            <button
+              v-for="template in customerProfileTemplates"
+              :key="`edit-template-${template.item_code}`"
+              type="button"
+              :class="{ active: planEditDraft.profileType === template.item_code }"
+              @click="applyPlanEditProfileTemplate(template.item_code)"
+            >
+              <strong>{{ template.item_name }}</strong>
+              <span>{{ template.description || template.metadata?.scenario_summary || '客户画像模板' }}</span>
+            </button>
+          </div>
+          <div class="profile-template-summary">
+            <BrainCircuit :size="15" />
+            <span>{{ planEditProfileScenario }}</span>
+          </div>
+
+          <div v-for="group in planEditCustomerProfileFieldGroups" :key="`edit-${group.title}`" class="dialog-field-group">
+            <b>{{ group.title }}</b>
+            <div class="profile-dialog-grid">
+              <label
+                v-for="field in group.fields"
+                :key="`edit-field-${field.itemCode}`"
+                class="dialog-profile-field"
+                :class="{ wide: isTextAreaField(field) || isMultiSelectField(field) }"
+              >
+                <span>{{ field.label }}</span>
+                <el-select
+                  v-if="field.inputType === 'select' || isMultiSelectField(field)"
+                  v-model="planEditDraft.customerProfileValues[field.fieldKey]"
+                  :multiple="isMultiSelectField(field)"
+                  filterable
+                  :allow-create="field.options.length === 0"
+                  default-first-option
+                  collapse-tags
+                  collapse-tags-tooltip
+                  :placeholder="field.description || field.label"
+                >
+                  <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" />
+                </el-select>
+                <el-input
+                  v-else-if="isTextAreaField(field)"
+                  v-model="planEditDraft.customerProfileValues[field.fieldKey]"
+                  type="textarea"
+                  :autosize="{ minRows: 1, maxRows: 4 }"
+                  :placeholder="field.description || field.label"
+                />
+                <el-input
+                  v-else
+                  v-model="planEditDraft.customerProfileValues[field.fieldKey]"
+                  :placeholder="field.description || field.label"
+                />
+                <em>{{ field.fieldKey }}</em>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="plan-edit-section">
+          <header>
+            <span>第一步</span>
+            <strong>训练场景</strong>
+          </header>
+          <div class="dialog-field-group">
+            <b>场景描述</b>
+            <el-input v-model="planEditDraft.scenarioDescription" type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" />
+          </div>
+          <div class="dialog-field-group">
+            <b>补充细节</b>
+            <el-input v-model="planEditDraft.extraDetails" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+          </div>
+        </section>
+
+        <section class="plan-edit-section">
+          <header>
+            <span>第三步</span>
+            <strong>训练阶段</strong>
+          </header>
+          <div class="training-form-grid two">
+            <label>
+              <span>训练宗旨</span>
+              <el-input v-model="planEditDraft.trainingPurpose" placeholder="例如：训练客户顾虑挖掘和下一步推进能力" />
+            </label>
+            <label>
+              <span>训练轮数</span>
+              <el-input-number v-model="planEditDraft.roundLimit" :min="0" :max="100" :step="1" controls-position="right" />
+            </label>
+          </div>
+          <div class="dialog-field-group">
+            <b>阶段配置 JSON</b>
+            <el-input v-model="planEditDraft.stagesJson" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" />
+          </div>
+        </section>
+
+        <section class="plan-edit-section">
+          <header>
+            <span>高级配置</span>
+            <strong>角色与评分完整结构</strong>
+            <em>复杂字段保持 JSON，便于完整保留后端结构</em>
+          </header>
+          <el-collapse v-model="planEditAdvancedPanels" class="plan-edit-collapse">
+            <el-collapse-item title="第二步：AI 客户角色" name="role">
+              <div class="plan-json-grid">
+                <label>
+                  <span>确认卡片 JSON</span>
+                  <el-input v-model="planEditDraft.roleConfirmCardJson" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }" />
+                </label>
+                <label>
+                  <span>可见画像 JSON</span>
+                  <el-input v-model="planEditDraft.visibleProfileJson" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }" />
+                </label>
+                <label>
+                  <span>隐藏画像 JSON</span>
+                  <el-input v-model="planEditDraft.hiddenProfileJson" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }" />
+                </label>
+                <label>
+                  <span>扮演画像 JSON</span>
+                  <el-input v-model="planEditDraft.roleProfileJson" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }" />
+                </label>
+              </div>
+            </el-collapse-item>
+            <el-collapse-item title="第四步：评分规则" name="score">
+              <div class="dialog-field-group">
+                <b>评分规则 JSON</b>
+                <el-input v-model="planEditDraft.scoringRulesJson" type="textarea" :autosize="{ minRows: 8, maxRows: 16 }" />
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </section>
       </section>
       <template #footer>
         <el-button @click="planEditVisible = false">取消</el-button>
         <el-button type="primary" :loading="savingPlanEdit" @click="savePlanEdit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="chunkDetailVisible"
+      width="980px"
+      class="profile-config-dialog chunk-detail-dialog"
+      destroy-on-close
+    >
+      <template #header>
+        <div class="chunk-detail-title">
+          <FileText :size="20" />
+          <strong>{{ activeChunkSummary?.label || '切片详情' }}</strong>
+          <span>{{ activeChunkSummary?.count || 0 }} 条分片 · {{ activeChunkSummary?.usageLabels.join('、') || '未标记用途' }}</span>
+        </div>
+      </template>
+      <section class="chunk-detail-body">
+        <article
+          v-for="(chunk, index) in activeChunkTypeChunks"
+          :key="chunk.chunk_id"
+          class="chunk-detail-item"
+        >
+          <header>
+            <strong>{{ activeChunkSummary?.label || casePartLabel(chunk.case_part) }} {{ index + 1 }}</strong>
+            <span>{{ chunkDetailMeta(chunk, index) }}</span>
+          </header>
+          <p>{{ chunk.chunk_text }}</p>
+          <footer>
+            <code>{{ chunk.chunk_id }}</code>
+            <span>{{ chunk.case_part }}</span>
+          </footer>
+        </article>
+        <div v-if="activeChunkTypeChunks.length === 0" class="training-empty compact">
+          <FileText :size="24" />
+          <span>当前类型暂无切片。</span>
+        </div>
+      </section>
+      <template #footer>
+        <el-button @click="chunkDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="versionDialogVisible"
+      width="940px"
+      class="profile-config-dialog version-chain-dialog"
+      destroy-on-close
+    >
+      <template #header>
+        <div class="chunk-detail-title">
+          <Route :size="20" />
+          <strong>训练资料版本链</strong>
+          <span>版本组 {{ activeVersionGroupId || '未加载' }} · {{ batchVersions.length }} 个版本</span>
+        </div>
+      </template>
+      <section class="version-chain-body" v-loading="versionLoading">
+        <article
+          v-for="batch in batchVersions"
+          :key="batch.batch_id"
+          class="version-chain-item"
+          :class="{ current: batch.is_current }"
+        >
+          <header>
+            <div>
+              <strong>V{{ batch.version_no || 1 }} · {{ batch.source_file }}</strong>
+              <span>{{ formatTime(batch.updated_at) }}</span>
+            </div>
+            <em>{{ batch.is_current ? '当前生效' : batchStatusLabel(batch.status) }}</em>
+          </header>
+          <div class="version-meta-grid">
+            <span>状态：{{ batchStatusLabel(batch.status) }}</span>
+            <span>切片：{{ batch.chunk_count }}</span>
+            <span>向量点：{{ batch.point_count }}</span>
+            <span>质量：{{ displayValue(batch.quality_report?.score ?? '-') }} 分</span>
+          </div>
+          <p v-if="batch.error_message">{{ batch.error_message }}</p>
+          <footer>
+            <el-button
+              v-if="batch.status === 'pending_review'"
+              class="batch-icon-button"
+              :icon="BadgeCheck"
+              :loading="publishingBatchId === batch.batch_id"
+              @click="publishTrainingBatch(batch.batch_id)"
+            >
+              发布
+            </el-button>
+            <el-button
+              v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed'"
+              class="batch-icon-button"
+              :icon="Sparkles"
+              :loading="reparsingBatchId === batch.batch_id"
+              @click="reparseTrainingBatch(batch)"
+            >
+              重切
+            </el-button>
+            <el-button
+              v-if="batch.status === 'archived'"
+              class="batch-icon-button"
+              :icon="RefreshCw"
+              :loading="rollingBackBatchId === batch.batch_id"
+              @click="rollbackTrainingBatch(batch)"
+            >
+              回滚
+            </el-button>
+            <el-button class="batch-icon-button" :icon="FileText" @click="openTrainingBatch(batch)">
+              查看切片
+            </el-button>
+            <el-button
+              class="batch-icon-button"
+              :icon="Eye"
+              :loading="previewingBatchId === batch.batch_id"
+              @click="previewTrainingBatch(batch)"
+            >
+              预览
+            </el-button>
+          </footer>
+        </article>
+        <div v-if="!versionLoading && batchVersions.length === 0" class="training-empty compact">
+          <Route :size="24" />
+          <span>暂无版本记录。</span>
+        </div>
+      </section>
+      <template #footer>
+        <el-button @click="versionDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -3489,6 +4684,10 @@ onMounted(() => {
   align-items: start;
 }
 
+.training-workspace.plan-step-workspace {
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+}
+
 .training-left-panel,
 .training-right-panel,
 .training-main-panel {
@@ -3595,6 +4794,66 @@ onMounted(() => {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.training-quality-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 30%, var(--line));
+  border-radius: 14px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 9%, transparent), transparent 54%),
+    color-mix(in srgb, var(--surface-strong) 82%, transparent);
+}
+
+.training-quality-card.good {
+  border-color: color-mix(in srgb, #31d0aa 42%, var(--line));
+}
+
+.training-quality-card.review {
+  border-color: color-mix(in srgb, #f6c65b 46%, var(--line));
+}
+
+.training-quality-card.poor {
+  border-color: color-mix(in srgb, #ff6b7a 46%, var(--line));
+}
+
+.training-quality-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.training-quality-card strong {
+  color: var(--primary);
+  font-size: 22px;
+}
+
+.training-quality-card span,
+.training-quality-card li {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.quality-metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quality-metric-row span {
+  border: 1px solid color-mix(in srgb, var(--cyan) 20%, var(--line));
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
+}
+
+.training-quality-card ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
 }
 
 .training-upload-zone span,
@@ -4239,6 +5498,42 @@ onMounted(() => {
   border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
 }
 
+.active-plan-brief {
+  border-color: color-mix(in srgb, var(--cyan) 28%, var(--line));
+}
+
+.plan-step-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 14px;
+}
+
+.plan-step-create,
+.plan-step-list {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 20%, var(--line));
+  border-radius: 14px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-strong) 58%, transparent);
+}
+
+.plan-step-create strong {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.plan-step-create span,
+.plan-step-create p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .training-plan-create,
 .training-plan-filter {
   display: grid;
@@ -4298,15 +5593,22 @@ onMounted(() => {
 .plan-edit-body {
   display: grid;
   gap: 14px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .plan-detail-head {
-  display: grid;
-  gap: 5px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   border: 1px solid color-mix(in srgb, var(--cyan) 24%, var(--line));
   border-radius: 14px;
   padding: 14px;
-  background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 11%, transparent), transparent 52%),
+    color-mix(in srgb, var(--surface-strong) 70%, transparent);
 }
 
 .plan-detail-head strong {
@@ -4314,11 +5616,363 @@ onMounted(() => {
   font-size: 18px;
 }
 
+.plan-detail-head div:first-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
 .plan-detail-head span,
 .plan-edit-body p {
   margin: 0;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+.plan-status-strip,
+.plan-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plan-status-strip {
+  justify-content: flex-end;
+  max-width: 520px;
+}
+
+.plan-status-strip span,
+.plan-chip-row span {
+  border: 1px solid color-mix(in srgb, var(--cyan) 26%, var(--line));
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: color-mix(in srgb, var(--text) 82%, var(--cyan));
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plan-snapshot-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.plan-snapshot-overview article {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--cyan) 24%, var(--line));
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface) 74%, transparent);
+}
+
+.plan-snapshot-overview span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.plan-snapshot-overview strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-snapshot-overview em {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--text) 70%, var(--cyan));
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-detail-section,
+.plan-edit-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 8px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 6%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-strong) 58%, transparent);
+}
+
+.plan-detail-section > header,
+.plan-edit-section > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plan-detail-section > header > span,
+.plan-edit-section > header > span {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--cyan) 40%, var(--line));
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.plan-detail-section > header strong,
+.plan-edit-section > header strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.plan-detail-section > header em,
+.plan-edit-section > header em {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.plan-detail-item {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.plan-detail-item.wide {
+  grid-column: 1 / -1;
+}
+
+.plan-detail-item span,
+.plan-json-grid span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plan-detail-item strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plan-object-grid,
+.plan-json-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.plan-object-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 45%),
+    color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.plan-object-card b,
+.plan-case-list > b {
+  color: color-mix(in srgb, var(--text) 86%, var(--cyan));
+  font-size: 13px;
+}
+
+.plan-object-card dl {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.26fr) minmax(0, 1fr);
+  gap: 8px 10px;
+  margin: 0;
+}
+
+.plan-object-card dt {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.plan-object-card dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plan-case-list {
+  display: grid;
+  gap: 8px;
+}
+
+.plan-case-list article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.plan-case-list strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.plan-case-list p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.plan-stage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.plan-stage-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, transparent), transparent 45%),
+    color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.plan-stage-card header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.plan-stage-card header em {
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.plan-stage-card header strong {
+  color: var(--text);
+}
+
+.plan-stage-goal {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.65;
+}
+
+.plan-stage-goal svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--primary);
+}
+
+.plan-score-list {
+  max-height: none;
+}
+
+.plan-edit-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--green) 26%, var(--line));
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text-soft);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--green) 9%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface) 76%, transparent);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.plan-edit-note svg {
+  color: var(--green);
+}
+
+.plan-edit-section .training-form-grid label.wide,
+.plan-json-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plan-edit-section .training-form-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.plan-edit-template-switch {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.plan-edit-template-switch button {
+  border-radius: 8px;
+}
+
+.plan-edit-template-switch span {
+  display: block;
+}
+
+.plan-edit-collapse {
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.plan-edit-collapse :deep(.el-collapse-item__header),
+.plan-edit-collapse :deep(.el-collapse-item__wrap) {
+  color: var(--text);
+  background: transparent;
+}
+
+.plan-edit-collapse :deep(.el-collapse-item__content) {
+  padding-bottom: 14px;
+}
+
+.plan-json-grid :deep(.el-textarea__inner) {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.plan-edit-section :deep(.el-input-number) {
+  width: 100%;
 }
 
 .tech-button.full {
@@ -4361,7 +6015,7 @@ onMounted(() => {
 
 .setup-flow-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -4379,7 +6033,7 @@ onMounted(() => {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 46%),
     color-mix(in srgb, var(--surface) 74%, transparent);
-  cursor: default;
+  cursor: pointer;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
@@ -4415,6 +6069,10 @@ onMounted(() => {
 
 .setup-step-card.locked {
   opacity: 0.58;
+}
+
+.setup-step-card.locked {
+  cursor: not-allowed;
 }
 
 .setup-step-card svg {
@@ -5356,6 +7014,19 @@ onMounted(() => {
     color-mix(in srgb, var(--surface) 66%, transparent);
 }
 
+.chunk-summary-list article.clickable {
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.chunk-summary-list article.clickable:hover,
+.chunk-summary-list article.clickable:focus-visible {
+  border-color: color-mix(in srgb, var(--cyan) 58%, var(--primary));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--cyan) 18%, transparent);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .chunk-summary-list article > div {
   display: flex;
   align-items: center;
@@ -5368,7 +7039,8 @@ onMounted(() => {
   font-size: 15px;
 }
 
-.chunk-summary-list article > div span {
+.chunk-summary-list article > div span,
+.chunk-summary-list article > div button {
   flex: 0 0 auto;
   border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
   border-radius: 999px;
@@ -5376,6 +7048,16 @@ onMounted(() => {
   color: var(--cyan);
   background: color-mix(in srgb, var(--cyan) 7%, transparent);
   font-size: 12px;
+}
+
+.chunk-summary-list article > div button {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.chunk-summary-list article > div button:hover {
+  border-color: color-mix(in srgb, var(--cyan) 70%, var(--primary));
+  color: color-mix(in srgb, var(--text) 82%, var(--cyan));
 }
 
 .chunk-summary-list p {
@@ -5402,6 +7084,178 @@ onMounted(() => {
   color: color-mix(in srgb, var(--text) 72%, var(--green));
   background: color-mix(in srgb, var(--green) 8%, transparent);
   font-size: 12px;
+}
+
+.chunk-detail-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.chunk-detail-title svg {
+  grid-row: 1 / 3;
+  color: var(--cyan);
+}
+
+.chunk-detail-title strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.chunk-detail-title span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.chunk-detail-body {
+  display: grid;
+  gap: 12px;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chunk-detail-item {
+  display: grid;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-strong) 62%, transparent);
+}
+
+.chunk-detail-item header {
+  display: grid;
+  gap: 4px;
+}
+
+.chunk-detail-item header strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.chunk-detail-item header span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chunk-detail-item p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chunk-detail-item footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chunk-detail-item footer code,
+.chunk-detail-item footer span {
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: 11px;
+}
+
+.version-chain-body {
+  display: grid;
+  gap: 12px;
+  min-height: 120px;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.version-chain-item {
+  display: grid;
+  gap: 11px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 50%),
+    color-mix(in srgb, var(--surface-strong) 68%, transparent);
+}
+
+.version-chain-item.current {
+  border-color: color-mix(in srgb, var(--green) 44%, var(--cyan));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.version-chain-item header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.version-chain-item header div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.version-chain-item header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-chain-item header span,
+.version-chain-item p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.version-chain-item header em {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--green) 34%, var(--line));
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: color-mix(in srgb, var(--green) 76%, var(--text));
+  background: color-mix(in srgb, var(--green) 9%, transparent);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.version-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.version-meta-grid span {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 8px;
+  padding: 7px 8px;
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-chain-item footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .score-ring {
@@ -5547,13 +7401,20 @@ onMounted(() => {
   .stage-setting-head,
   .stage-setting-head div,
   .open-stage-card header,
-  .open-stage-goal {
+  .open-stage-goal,
+  .plan-detail-head,
+  .plan-stage-card header {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .stage-setting-head span {
     white-space: normal;
+  }
+
+  .plan-status-strip {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .training-left-panel .training-form-grid.two {
@@ -5570,9 +7431,14 @@ onMounted(() => {
   .training-left-panel .training-form-grid.two,
   .profile-template-switch,
   .training-right-panel .profile-template-switch,
+  .plan-edit-template-switch,
   .profile-dynamic-grid,
   .training-right-panel .profile-dynamic-grid,
   .profile-section-grid,
+  .plan-snapshot-overview,
+  .plan-detail-grid,
+  .plan-object-grid,
+  .plan-json-grid,
   .condition-grid,
   .training-kpi-grid,
   .composer-row,

@@ -1109,8 +1109,8 @@ onMounted(() => { // Vue 组件挂载完成后执行
           <Bot :size="24" />
         </div>
         <div>
-          <h1>AI RAG Agent</h1>
-          <p>扫地机器人智能客服</p>
+          <h1>知习台</h1>
+          <p>知识库智能问答</p>
         </div>
       </div>
 

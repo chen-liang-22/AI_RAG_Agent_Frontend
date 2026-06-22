@@ -283,11 +283,6 @@ export type TrainingResponseMode = 'stream' | 'blocking'
 export interface TrainingKnowledgeUploadPayload { // 销售训练知识上传请求
   file: File // LMS 训练案例文件
   sourceType?: string // 知识来源类型，一期默认 lms_case
-  profileType?: string // 客户画像类型
-  taskType?: string // 训练任务类型
-  industry?: string // 行业标签
-  difficulty?: string // 难度标签
-  visibilityDefault?: string // 通用切片默认可见范围
   createdBy?: string // 上传人
 }
 
@@ -298,6 +293,7 @@ export interface TrainingKnowledgeUploadResponse { // 销售训练知识入库�
   point_count: number
   source_file?: string | null
   duplicate_of?: string | null
+  quality_report: Record<string, unknown>
   failed_chunks: string[]
 }
 
@@ -307,6 +303,10 @@ export interface TrainingKnowledgeBatchResponse { // 训练资料上传批次
   source_file: string
   file_path?: string | null
   file_md5?: string | null
+  version_group_id?: string | null
+  version_no: number
+  previous_batch_id?: string | null
+  is_current: boolean
   profile_type?: string | null
   task_type?: string | null
   industry?: string | null
@@ -316,6 +316,7 @@ export interface TrainingKnowledgeBatchResponse { // 训练资料上传批次
   chunk_count: number
   point_count: number
   error_message?: string | null
+  quality_report: Record<string, unknown>
   created_by?: string | null
   created_at: string
   updated_at: string
@@ -352,6 +353,38 @@ export interface TrainingKnowledgePreviewResponse { // 训练资料原文件预�
 export interface TrainingKnowledgeDeleteResponse { // 训练资料删除结果
   status: string
   batch_id: string
+}
+
+export interface TrainingKnowledgePublishResponse { // 训练资料确认发布结果
+  batch_id: string
+  status: string
+  chunk_count: number
+  point_count: number
+  quality_report: Record<string, unknown>
+}
+
+export interface TrainingKnowledgeRollbackResponse { // 训练资料版本回滚结果
+  batch_id: string
+  status: string
+  version_group_id: string
+  version_no: number
+  chunk_count: number
+  point_count: number
+  quality_report: Record<string, unknown>
+}
+
+export interface TrainingKnowledgeReparseResponse { // 训练资料重新切分结果
+  batch_id: string
+  status: string
+  chunk_count: number
+  point_count: number
+  source_file?: string | null
+  quality_report: Record<string, unknown>
+}
+
+export interface TrainingKnowledgeVersionListResponse { // 训练资料版本链
+  version_group_id: string
+  items: TrainingKnowledgeBatchResponse[]
 }
 
 export interface TrainingTraineeProfilePayload { // 学员画像输入
@@ -457,6 +490,8 @@ export interface TrainingPlanUpdatePayload { // 修改销售训练方案
   visible_profile?: Record<string, unknown>
   hidden_profile?: Record<string, unknown>
   role_profile?: Record<string, unknown>
+  training_purpose?: string
+  round_limit?: number
   stages?: TrainingGoalStage[]
   scoring_rules?: Record<string, unknown>
 }
@@ -857,16 +892,16 @@ export function getExamSessionDetail(sessionId: string) { // 查询考试详情
 export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPayload) { // 上传销售训练知识并写入训练向量库
   // 文件上传必须使用 FormData，让浏览器自动生成 multipart boundary。
   const formData = new FormData()
+  // file 对应后端 FastAPI 的 file: UploadFile = File(...)。
   formData.append('file', payload.file)
+  // source_type 决定后端使用哪一种 KnowledgeIngestStrategy；一期默认 lms_case。
   formData.append('source_type', payload.sourceType || 'lms_case')
-  formData.append('visibility_default', payload.visibilityDefault || 'visible')
 
-  if (payload.profileType) formData.append('profile_type', payload.profileType)
-  if (payload.taskType) formData.append('task_type', payload.taskType)
-  if (payload.industry) formData.append('industry', payload.industry)
-  if (payload.difficulty) formData.append('difficulty', payload.difficulty)
+  // 上传人只用于审计；当前没有用户体系时可以不传。
   if (payload.createdBy) formData.append('created_by', payload.createdBy)
 
+  // 注意这里不用通用 request()，因为通用 request() 默认发 JSON；
+  // 文件上传必须让 fetch 直接携带 FormData。
   const response = await fetch(`${API_BASE_URL}/training/knowledge/upload`, {
     method: 'POST',
     body: formData,
@@ -897,6 +932,29 @@ export function deleteTrainingKnowledgeBatch(batchId: string) { // 删除训练�
   })
 }
 
+export function publishTrainingKnowledgeBatch(batchId: string) { // 确认发布训练资料并写入训练向量库
+  return request<TrainingKnowledgePublishResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/publish`, {
+    method: 'POST',
+  })
+}
+
+export function rollbackTrainingKnowledgeBatch(batchId: string) { // 回滚训练资料到指定历史版本
+  return request<TrainingKnowledgeRollbackResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/rollback`, {
+    method: 'POST',
+  })
+}
+
+export function reparseTrainingKnowledgeBatch(batchId: string, useLlmFallback = true) { // 重新切分未发布训练资料
+  const params = new URLSearchParams({ use_llm_fallback: String(useLlmFallback) })
+  return request<TrainingKnowledgeReparseResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/reparse?${params.toString()}`, {
+    method: 'POST',
+  })
+}
+
+export function listTrainingKnowledgeBatchVersions(batchId: string) { // 查询训练资料版本链
+  return request<TrainingKnowledgeVersionListResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/versions`)
+}
+
 export function listTrainingKnowledgeBatches(page = 1, pageSize = 10) { // 查询训练资料上传历史
   const params = new URLSearchParams({
     page: String(page),
@@ -905,7 +963,7 @@ export function listTrainingKnowledgeBatches(page = 1, pageSize = 10) { // 查�
   return request<TrainingKnowledgeBatchListResponse>(`/training/knowledge/batches?${params.toString()}`)
 }
 
-export function createTrainingPlan(payload: TrainingPlanCreatePayload) { // 创建训练方案，名称后端校验唯一
+export function createTrainingPlan(payload: TrainingPlanCreatePayload) { // 创建训练方案，名称允许重复，后端用 plan_id 区分
   return request<TrainingPlanDetailResponse>('/training/plans', {
     method: 'POST',
     body: JSON.stringify(payload),
