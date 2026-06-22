@@ -1853,6 +1853,7 @@ async function uploadKnowledge() {
     uploadResult.value = await uploadTrainingKnowledge({
       file: selectedFile.value,
       sourceType: sourceType.value,
+      modelMode: modelMode.value,
     })
     // 第三步：上传成功后立即拉取本批次切片，让右侧切片概览能马上展示。
     const response = await listTrainingKnowledgeChunks(uploadResult.value.batch_id)
@@ -1960,7 +1961,7 @@ async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | stri
 
   reparsingBatchId.value = batchId
   try {
-    const result = await reparseTrainingKnowledgeBatch(batchId, true)
+    const result = await reparseTrainingKnowledgeBatch(batchId, true, modelMode.value)
     if (uploadResult.value?.batch_id === batchId) {
       uploadResult.value = {
         ...uploadResult.value,
