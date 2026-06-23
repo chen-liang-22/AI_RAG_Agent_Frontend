@@ -312,43 +312,33 @@ const roleFlowStatusText = computed(() => {
 const stageFlowStatusText = computed(() => goalSetting.value ? `${goalSetting.value.round_limit} 轮` : roleResult.value ? '待生成' : '先生成角色')
 const scoreFlowStatusText = computed(() => goalSetting.value ? '100 分' : '先生成训练阶段')
 const canGoPreviousSetupStep = computed(() => activeSetupTab.value !== 'plan')
-const trainingCockpitCards = computed(() => [
+// 左侧工作区导航：顶部单独承载资料管理，左侧聚焦训练方案、陪练和复盘主流程。
+const trainingWorkspaceNavItems = computed(() => [
   {
-    key: 'knowledge',
-    title: '训练资料',
-    value: batchTotal.value ? `${batchTotal.value} 批` : '待上传',
-    detail: batchTotal.value ? `已加载 ${chunks.value.length} 条资料结构` : '先上传 LMS 案例或训练材料',
-    icon: UploadCloud,
-    tab: 'knowledge' as TrainingWorkspaceTab,
-    ready: batchTotal.value > 0,
-  },
-  {
-    key: 'role',
-    title: 'AI 客户',
-    value: roleResult.value ? '已生成' : '待生成',
-    detail: roleResult.value ? roleTitleText.value : '补充问答后生成客户角色',
+    key: 'setup' as TrainingWorkspaceTab,
+    title: '训练方案',
+    desc: '训练名称、画像、角色、目标和评分',
+    value: activePlan.value ? activePlan.value.plan_name : '待创建',
+    status: goalSetting.value ? '已完成' : roleResult.value ? '角色已生成' : activePlan.value ? '配置中' : '未开始',
     icon: Radar,
-    tab: 'setup' as TrainingWorkspaceTab,
-    setupTab: activePlan.value ? 'role' as SetupFlowTab : 'plan' as SetupFlowTab,
-    ready: Boolean(roleResult.value),
-  },
-  {
-    key: 'stage',
-    title: '训练阶段',
-    value: goalSetting.value ? `${goalSetting.value.round_limit} 轮` : '待设置',
-    detail: goalSetting.value && goalStage.value ? goalStage.value.core_goal : '确认角色后生成训练目标',
-    icon: Target,
-    tab: 'setup' as TrainingWorkspaceTab,
-    setupTab: activePlan.value ? 'stage' as SetupFlowTab : 'plan' as SetupFlowTab,
     ready: Boolean(goalSetting.value),
   },
   {
-    key: 'review',
+    key: 'chat' as TrainingWorkspaceTab,
+    title: '实战陪练',
+    desc: '和 AI 客户进行流式销售对话',
+    value: activeSession.value ? `${answeredRounds.value}/${goalSetting.value?.round_limit || '-'} 轮` : '待开始',
+    status: activeSession.value ? stageStatus.value : '未开始',
+    icon: MessageSquareText,
+    ready: Boolean(activeSession.value),
+  },
+  {
+    key: 'review' as TrainingWorkspaceTab,
     title: '训练复盘',
-    value: historyTotal.value ? `${historyTotal.value} 场` : '暂无',
-    detail: scoreResult.value ? `最近评分 ${scoreResult.value.total_score} 分` : '完成陪练后生成评分报告',
+    desc: '查看历史训练、评分和改进建议',
+    value: scoreResult.value ? `${scoreResult.value.total_score} 分` : historyTotal.value ? `${historyTotal.value} 场` : '暂无',
+    status: scoreResult.value ? '已评分' : historyTotal.value ? '有历史' : '未评分',
     icon: Trophy,
-    tab: 'review' as TrainingWorkspaceTab,
     ready: historyTotal.value > 0 || Boolean(scoreResult.value),
   },
 ])
@@ -693,6 +683,57 @@ function valueList(value: unknown): string[] {
 
 function safeList(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)) : []
+}
+
+function reportPointList(value: unknown): string[] {
+  // 训练评分报告里的命中点/遗漏点有时是对象数组，不能直接 String(item)，否则会显示 [object Object]。
+  return Array.isArray(value)
+    ? value.map((item) => formatReportPoint(item)).filter(Boolean)
+    : []
+}
+
+function formatReportPoint(value: unknown): string {
+  if (!hasDisplayValue(value)) return ''
+  if (typeof value !== 'object' || value === null) return String(value).trim()
+
+  const source = value as Record<string, unknown>
+  const title = firstDisplayValue(source, [
+    'point_name',
+    'name',
+    'title',
+    'dimension_name',
+    'ability',
+    'skill',
+    'label',
+  ])
+  const detail = firstDisplayValue(source, [
+    'description',
+    'detail',
+    'reason',
+    'evidence',
+    'comment',
+    'suggestion',
+    'advice',
+    'requirement',
+  ])
+  const score = firstDisplayValue(source, ['score', 'deduct_score', 'max_score'])
+  const level = firstDisplayValue(source, ['level', 'status'])
+
+  const parts: string[] = []
+  if (title) parts.push(title)
+  if (detail && detail !== title) parts.push(detail)
+  if (score) parts.push(`${score}分`)
+  if (level) parts.push(level)
+
+  return parts.length > 0 ? parts.join(' · ') : displayValue(value)
+}
+
+function firstDisplayValue(source: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key]
+    if (hasDisplayValue(value)) return displayValue(value).trim()
+  }
+  return ''
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {
@@ -1067,6 +1108,7 @@ function batchStatusLabel(code: string) {
     published: '已发布',
     archived: '历史版本',
     parsing_failed: '解析失败',
+    publish_failed: '发布失败',
     deleted: '已删除',
     duplicated: '重复复用',
   })
@@ -1790,13 +1832,6 @@ function goNextSetupStep() {
   }
 }
 
-function openCockpitCard(card: { tab: TrainingWorkspaceTab; setupTab?: SetupFlowTab }) {
-  activeWorkspaceTab.value = card.tab
-  if (card.setupTab) {
-    openSetupTab(card.setupTab)
-  }
-}
-
 function openTrainingAction(action: TrainingNextAction) {
   activeWorkspaceTab.value = action.tab
   if (action.setupTab) {
@@ -1849,7 +1884,7 @@ async function uploadKnowledge() {
   uploading.value = true
   try {
     // 第二步：把 File 对象封装成 FormData，调用后端 /training/knowledge/upload。
-    // 后端会完成文件保存、MD5 去重、解析切片和质量评估；确认发布前不会写入 Qdrant。
+    // 后端会完成文件保存、MD5 去重、解析切片和质量评估；确认发布前只写入临时向量库。
     uploadResult.value = await uploadTrainingKnowledge({
       file: selectedFile.value,
       sourceType: sourceType.value,
@@ -1870,7 +1905,7 @@ async function uploadKnowledge() {
 }
 
 async function publishTrainingBatch(batchId: string) {
-  // 人工确认发布后才会生成 embedding 并写入 sales_training_cases，避免低质量切片直接污染向量库。
+  // 人工确认发布后，后端会把临时向量库里的切片复制到正式训练向量库。
   publishingBatchId.value = batchId
   try {
     const result = await publishTrainingKnowledgeBatch(batchId)
@@ -1899,7 +1934,7 @@ async function publishTrainingBatch(batchId: string) {
 }
 
 async function rollbackTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
-  // 回滚会把该历史版本重新写入 Qdrant，并让同版本组其他版本退出训练检索。
+  // 回滚会把该历史版本标记为当前版本，并让同版本组其他版本退出训练检索。
   try {
     await ElMessageBox.confirm(
       `确定回滚到「${batch.source_file}」的 V${batch.version_no || 1} 吗？当前版本会变成历史版本。`,
@@ -1942,7 +1977,7 @@ async function rollbackTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
 }
 
 async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | string) {
-  // 人工重切只允许用于未发布批次，后端会重新生成 SQLite 预览切片，不会写入 Qdrant。
+  // 人工重切只允许用于未发布批次，后端会重新生成临时向量库切片，等待再次发布。
   const batchId = typeof batch === 'string' ? batch : batch.batch_id
   const sourceFile = typeof batch === 'string' ? uploadResult.value?.source_file || '当前资料' : batch.source_file
   try {
@@ -2366,7 +2401,6 @@ async function openTrainingHistory(item: TrainingSessionSummaryResponse) {
   try {
     const detail = await getTrainingSessionDetail(item.session_id)
     hydrateTrainingDetail(detail)
-    await scrollToBottom()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练复盘读取失败')
   } finally {
@@ -2451,81 +2485,60 @@ onMounted(() => {
         <p>把 LMS 案例写入训练向量库，由模型生成 AI 客户、训练目标和动态轮数，再通过文字对话锻炼销售沟通能力。</p>
       </div>
       <div class="training-hero-actions">
+        <button
+          type="button"
+          class="hero-chip hero-chip-button"
+          :class="{ active: activeWorkspaceTab === 'knowledge' }"
+          @click="activeWorkspaceTab = 'knowledge'"
+        >
+          <UploadCloud :size="15" />
+          资料管理
+          <em>{{ batchTotal > 0 ? `${batchTotal} 批` : '待上传' }}</em>
+        </button>
         <span class="hero-chip"><Network :size="15" /> 向量库 sales_training_cases</span>
         <span class="hero-chip"><Route :size="15" /> 向导式创建</span>
         <span class="hero-chip"><ShieldCheck :size="15" /> 文字训练</span>
       </div>
     </header>
 
-    <section class="training-command-center">
-      <div class="training-next-card">
-        <div class="next-card-header">
-          <span><Sparkles :size="16" /> 下一步建议</span>
-          <em>{{ trainingReadinessPercent }}% 就绪</em>
-        </div>
-        <strong>{{ nextTrainingAction.title }}</strong>
-        <p>{{ nextTrainingAction.detail }}</p>
-        <div class="readiness-bar" aria-label="训练准备度">
-          <i :style="{ width: `${trainingReadinessPercent}%` }" />
-        </div>
-        <button type="button" class="next-action-button" @click="openTrainingAction(nextTrainingAction)">
-          {{ nextTrainingAction.actionText }}
-          <ArrowRight :size="15" />
-        </button>
-      </div>
+    <section class="training-console-layout">
+      <aside class="training-workspace-rail">
+        <section class="training-next-card compact">
+          <div class="next-card-header">
+            <span><Sparkles :size="16" /> 下一步</span>
+            <em>{{ trainingReadinessPercent }}%</em>
+          </div>
+          <strong>{{ nextTrainingAction.title }}</strong>
+          <p>{{ nextTrainingAction.detail }}</p>
+          <div class="readiness-bar" aria-label="训练准备度">
+            <i :style="{ width: `${trainingReadinessPercent}%` }" />
+          </div>
+          <button type="button" class="next-action-button" @click="openTrainingAction(nextTrainingAction)">
+            {{ nextTrainingAction.actionText }}
+            <ArrowRight :size="15" />
+          </button>
+        </section>
 
-      <div class="training-cockpit">
-        <button
-          v-for="card in trainingCockpitCards"
-          :key="card.key"
-          type="button"
-          class="training-cockpit-card"
-          :class="{ ready: card.ready }"
-          @click="openCockpitCard(card)"
-        >
-          <span class="cockpit-icon"><component :is="card.icon" :size="18" /></span>
-          <span class="cockpit-copy">
-            <em>{{ card.title }}</em>
-            <strong>{{ card.value }}</strong>
-            <small>{{ compactText(card.detail, 34) }}</small>
-          </span>
-        </button>
-      </div>
-    </section>
+        <nav class="training-workspace-nav" aria-label="销售训练工作区">
+          <button
+            v-for="item in trainingWorkspaceNavItems"
+            :key="item.key"
+            type="button"
+            :class="{ active: activeWorkspaceTab === item.key, ready: item.ready }"
+            @click="activeWorkspaceTab = item.key"
+          >
+            <span class="workspace-nav-icon"><component :is="item.icon" :size="18" /></span>
+            <span>
+              <strong>{{ item.title }}</strong>
+              <em>{{ item.desc }}</em>
+            </span>
+            <b>{{ item.value }}</b>
+            <small>{{ item.status }}</small>
+          </button>
+        </nav>
+      </aside>
 
-    <section class="training-flow-strip" aria-label="销售陪练流程">
-      <span :class="{ done: batchTotal > 0, active: activeWorkspaceTab === 'knowledge' }">资料入库</span>
-      <i />
-      <span :class="{ done: Boolean(activePlan), active: activeWorkspaceTab === 'setup' && activeSetupTab === 'plan' }">训练名称</span>
-      <i />
-      <span :class="{ done: Boolean(roleResult), active: activeWorkspaceTab === 'setup' && activeSetupTab === 'role' }">客户角色</span>
-      <i />
-      <span :class="{ done: Boolean(goalSetting), active: activeWorkspaceTab === 'setup' && activeSetupTab === 'stage' }">训练目标</span>
-      <i />
-      <span :class="{ done: Boolean(activeSession), active: activeWorkspaceTab === 'chat' }">实战陪练</span>
-      <i />
-      <span :class="{ done: Boolean(scoreResult), active: activeWorkspaceTab === 'review' }">评分复盘</span>
-    </section>
-
-    <section class="training-workspace-tabs" role="tablist" aria-label="销售陪练工作区">
-      <button type="button" :class="{ active: activeWorkspaceTab === 'knowledge' }" @click="activeWorkspaceTab = 'knowledge'">
-        <UploadCloud :size="16" />
-        <span>资料管理</span>
-      </button>
-      <button type="button" :class="{ active: activeWorkspaceTab === 'setup' }" @click="activeWorkspaceTab = 'setup'">
-        <Radar :size="16" />
-        <span>创建训练</span>
-      </button>
-      <button type="button" :class="{ active: activeWorkspaceTab === 'chat' }" @click="activeWorkspaceTab = 'chat'">
-        <MessageSquareText :size="16" />
-        <span>实战陪练</span>
-      </button>
-      <button type="button" :class="{ active: activeWorkspaceTab === 'review' }" @click="activeWorkspaceTab = 'review'">
-        <Trophy :size="16" />
-        <span>训练复盘</span>
-      </button>
-    </section>
-
+      <main class="training-workspace-stage">
     <section v-show="activeWorkspaceTab === 'knowledge'" class="training-knowledge-workspace">
       <section class="training-panel">
         <div class="panel-title panel-title-between">
@@ -2594,7 +2607,7 @@ onMounted(() => {
               <li v-for="warning in uploadQualityWarnings" :key="warning">{{ warning }}</li>
             </ul>
             <el-button
-              v-if="uploadResult.status === 'pending_review'"
+              v-if="uploadResult.status === 'pending_review' || uploadResult.status === 'publish_failed'"
               class="tech-button primary full"
               :loading="publishingBatchId === uploadResult.batch_id"
               @click="publishTrainingBatch(uploadResult.batch_id)"
@@ -2642,7 +2655,7 @@ onMounted(() => {
               </div>
               <div class="batch-action-row" @click.stop>
                 <el-button
-                  v-if="batch.status === 'pending_review'"
+                  v-if="batch.status === 'pending_review' || batch.status === 'publish_failed'"
                   class="batch-icon-button"
                   :icon="BadgeCheck"
                   :loading="publishingBatchId === batch.batch_id"
@@ -2651,7 +2664,7 @@ onMounted(() => {
                   发布
                 </el-button>
                 <el-button
-                  v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed'"
+                  v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed' || batch.status === 'publish_failed'"
                   class="batch-icon-button"
                   :icon="Sparkles"
                   :loading="reparsingBatchId === batch.batch_id"
@@ -2739,9 +2752,9 @@ onMounted(() => {
     <section
       v-show="activeWorkspaceTab === 'setup'"
       class="training-workspace"
-      :class="{ 'plan-step-workspace': activeSetupTab === 'plan' }"
+      :class="{ 'plan-step-workspace': activeSetupTab === 'plan', 'has-left-panel': Boolean(activePlan) }"
     >
-      <aside class="training-left-panel">
+      <aside v-if="activePlan" class="training-left-panel">
         <section v-if="activePlan" class="training-panel active-plan-brief">
           <div class="panel-title panel-title-between">
             <span><Route :size="16" /> 当前训练</span>
@@ -2770,21 +2783,6 @@ onMounted(() => {
             修改学员画像
           </el-button>
         </section>
-
-        <section class="training-panel setup-material-card">
-          <div class="panel-title panel-title-between">
-            <span><FileText :size="16" /> 训练资料</span>
-            <em>{{ trainingBatches.length ? `${batchTotal} 个批次` : '未选择' }}</em>
-          </div>
-          <div class="material-mini">
-            <strong>{{ trainingBatches.find((item) => item.batch_id === activeBatchId)?.source_file || uploadResult?.source_file || '暂无训练资料' }}</strong>
-            <span>资料上传和切片查看在“资料管理”页单独维护，创建训练时只使用已入库的训练向量。</span>
-          </div>
-          <el-button class="tech-button full" :icon="UploadCloud" @click="activeWorkspaceTab = 'knowledge'">
-            管理训练资料
-          </el-button>
-        </section>
-
       </aside>
 
       <section class="training-main-panel">
@@ -3229,7 +3227,7 @@ onMounted(() => {
           <el-button text :loading="loadingHistory" @click="refreshTrainingHistory">刷新</el-button>
         </div>
         <div class="training-history-list" v-loading="loadingHistory || loadingDetail">
-          <button v-for="item in trainingHistories" :key="item.session_id" type="button" @click="openTrainingHistory(item); activeWorkspaceTab = 'chat'">
+          <button v-for="item in trainingHistories" :key="item.session_id" type="button" @click="openTrainingHistory(item)">
             <strong>{{ formatTime(item.started_at) }}</strong>
             <span>{{ item.status }} · {{ item.answered_count }}/{{ item.round_limit }} 轮</span>
             <em>{{ item.total_score === null || item.total_score === undefined ? '未评分' : `${item.total_score}分 / ${item.level || '-'}` }}</em>
@@ -3265,9 +3263,9 @@ onMounted(() => {
           </div>
           <div class="report-list">
             <b>命中点</b>
-            <p v-for="item in safeList(report.hit_points)" :key="item">{{ item }}</p>
+            <p v-for="item in reportPointList(report.hit_points)" :key="item">{{ item }}</p>
             <b>遗漏点</b>
-            <p v-for="item in safeList(report.missing_points)" :key="item">{{ item }}</p>
+            <p v-for="item in reportPointList(report.missing_points)" :key="item">{{ item }}</p>
             <b>改进建议</b>
             <p>{{ displayValue(report.improvement_advice || '暂无') }}</p>
             <b>参考话术</b>
@@ -3279,6 +3277,8 @@ onMounted(() => {
           <span>选择一场训练或完成评分后查看报告。</span>
         </div>
       </section>
+    </section>
+      </main>
     </section>
 
     <el-dialog
@@ -3820,7 +3820,7 @@ onMounted(() => {
           <p v-if="batch.error_message">{{ batch.error_message }}</p>
           <footer>
             <el-button
-              v-if="batch.status === 'pending_review'"
+              v-if="batch.status === 'pending_review' || batch.status === 'publish_failed'"
               class="batch-icon-button"
               :icon="BadgeCheck"
               :loading="publishingBatchId === batch.batch_id"
@@ -3829,7 +3829,7 @@ onMounted(() => {
               发布
             </el-button>
             <el-button
-              v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed'"
+              v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed' || batch.status === 'publish_failed'"
               class="batch-icon-button"
               :icon="Sparkles"
               :loading="reparsingBatchId === batch.batch_id"
@@ -4177,11 +4177,24 @@ onMounted(() => {
   min-height: 112px;
 }
 
-.training-command-center {
+.training-console-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.training-workspace-rail {
+  position: sticky;
+  top: 14px;
+  display: grid;
   gap: 12px;
-  align-items: stretch;
+}
+
+.training-workspace-stage {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .training-next-card {
@@ -4199,6 +4212,12 @@ onMounted(() => {
     color-mix(in srgb, var(--surface) 82%, transparent);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+}
+
+.training-next-card.compact {
+  min-height: auto;
+  border-radius: 8px;
+  padding: 14px;
 }
 
 .training-next-card::before {
@@ -4297,124 +4316,107 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
-.training-cockpit {
+.training-workspace-nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--cyan) 16%);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface) 84%, transparent);
 }
 
-.training-cockpit-card {
+.training-workspace-nav button {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 11px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 9px;
   align-items: center;
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: 18px;
-  padding: 13px;
+  border-radius: 8px;
+  padding: 10px;
   color: var(--text);
   text-align: left;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 48%),
-    color-mix(in srgb, var(--surface) 78%, transparent);
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 6%, transparent), transparent 50%),
+    color-mix(in srgb, var(--surface-strong) 68%, transparent);
   cursor: pointer;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.training-cockpit-card:hover,
-.training-cockpit-card.ready {
+.training-workspace-nav button:hover,
+.training-workspace-nav button.ready {
   border-color: color-mix(in srgb, var(--cyan) 46%, var(--line));
 }
 
-.training-cockpit-card:hover {
-  box-shadow: 0 0 22px color-mix(in srgb, var(--cyan) 16%, transparent);
+.training-workspace-nav button:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--cyan) 14%, transparent);
   transform: translateY(-1px);
 }
 
-.cockpit-icon {
+.training-workspace-nav button.active {
+  border-color: color-mix(in srgb, var(--cyan) 68%, var(--primary));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, transparent), transparent 56%),
+    color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--cyan) 18%, transparent);
+}
+
+.workspace-nav-icon {
   display: inline-grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border: 1px solid color-mix(in srgb, var(--cyan) 28%, var(--line));
-  border-radius: 14px;
+  border-radius: 8px;
   color: var(--cyan);
   background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
 }
 
-.training-cockpit-card.ready .cockpit-icon {
+.training-workspace-nav button.ready .workspace-nav-icon {
   color: var(--green);
   border-color: color-mix(in srgb, var(--green) 36%, var(--line));
 }
 
-.cockpit-copy {
+.training-workspace-nav button > span:not(.workspace-nav-icon) {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
 }
 
-.cockpit-copy em {
+.training-workspace-nav button strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-workspace-nav button em {
   color: var(--text-muted);
   font-size: 12px;
   font-style: normal;
-}
-
-.cockpit-copy strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cockpit-copy small {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
   line-height: 1.45;
+}
+
+.training-workspace-nav button b {
+  overflow: hidden;
+  color: var(--cyan);
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.training-flow-strip {
-  display: grid;
-  grid-template-columns: auto 1fr auto 1fr auto 1fr auto 1fr auto;
-  gap: 8px;
-  align-items: center;
-  border: 1px solid color-mix(in srgb, var(--cyan) 20%, var(--line));
-  border-radius: 18px;
-  padding: 11px 14px;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--primary) 8%, transparent), transparent 42%),
-    color-mix(in srgb, var(--surface) 78%, transparent);
-}
-
-.training-flow-strip span {
-  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+.training-workspace-nav button small {
+  grid-column: 2 / 4;
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--green) 24%, var(--line));
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 2px 7px;
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
+  background: color-mix(in srgb, var(--green) 6%, transparent);
+  font-size: 11px;
   white-space: nowrap;
-  background: color-mix(in srgb, var(--surface-strong) 62%, transparent);
-}
-
-.training-flow-strip span.done {
-  color: color-mix(in srgb, var(--green) 80%, var(--text));
-  border-color: color-mix(in srgb, var(--green) 38%, var(--line));
-}
-
-.training-flow-strip span.active {
-  color: #fff;
-  border-color: color-mix(in srgb, var(--cyan) 70%, var(--primary));
-  background: linear-gradient(135deg, var(--primary), var(--cyan));
-  box-shadow: 0 0 16px color-mix(in srgb, var(--cyan) 26%, transparent);
-}
-
-.training-flow-strip i {
-  height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--cyan) 46%, transparent), color-mix(in srgb, var(--line) 58%, transparent));
 }
 
 .training-hero-actions,
@@ -4443,6 +4445,35 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.hero-chip-button {
+  min-height: 38px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.hero-chip-button:hover,
+.hero-chip-button.active {
+  border-color: color-mix(in srgb, var(--cyan) 70%, var(--primary));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--cyan) 24%, transparent);
+  transform: translateY(-1px);
+}
+
+.hero-chip-button.active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--cyan));
+}
+
+.hero-chip-button em {
+  border: 1px solid color-mix(in srgb, var(--cyan) 30%, transparent);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: inherit;
+  font-size: 11px;
+  font-style: normal;
+  background: color-mix(in srgb, var(--surface-strong) 52%, transparent);
+}
+
 .training-panel,
 .training-chat-shell {
   position: relative;
@@ -4465,51 +4496,6 @@ onMounted(() => {
   content: '';
   background: linear-gradient(90deg, transparent, var(--cyan), var(--primary), transparent);
   box-shadow: 0 0 12px color-mix(in srgb, var(--cyan) 60%, transparent);
-}
-
-.training-workspace-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--cyan) 18%);
-  border-radius: 18px;
-  padding: 8px;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 42%),
-    color-mix(in srgb, var(--surface) 82%, transparent);
-  box-shadow: var(--shadow-sm);
-}
-
-.training-workspace-tabs button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 42px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  color: var(--text-muted);
-  background: transparent;
-  cursor: pointer;
-  font-weight: 700;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
-}
-
-.training-workspace-tabs button:hover,
-.training-workspace-tabs button.active {
-  border-color: color-mix(in srgb, var(--cyan) 62%, var(--primary));
-  color: var(--text);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, transparent), transparent 48%),
-    color-mix(in srgb, var(--surface-strong) 84%, transparent);
-  box-shadow:
-    0 10px 24px color-mix(in srgb, var(--cyan) 12%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
-  transform: translateY(-1px);
-}
-
-.training-workspace-tabs button.active {
-  color: var(--primary);
 }
 
 .training-knowledge-workspace {
@@ -4653,31 +4639,6 @@ onMounted(() => {
   box-shadow: 0 0 16px color-mix(in srgb, #ff6b7a 18%, transparent);
 }
 
-.material-mini {
-  display: grid;
-  gap: 7px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 26%, var(--line));
-  border-radius: 14px;
-  padding: 11px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 9%, transparent), transparent 44%),
-    color-mix(in srgb, var(--surface) 72%, transparent);
-}
-
-.material-mini strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.material-mini span {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .training-workspace {
   display: grid;
   grid-template-columns: minmax(230px, 290px) minmax(720px, 1fr) minmax(360px, 420px);
@@ -4686,6 +4647,10 @@ onMounted(() => {
 }
 
 .training-workspace.plan-step-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.training-workspace.plan-step-workspace.has-left-panel {
   grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
 }
 
@@ -6016,7 +5981,7 @@ onMounted(() => {
 
 .setup-flow-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
   gap: 10px;
 }
 
@@ -6039,12 +6004,7 @@ onMounted(() => {
 }
 
 .setup-step-card::after {
-  content: '';
-  position: absolute;
-  right: -9px;
-  width: 8px;
-  height: 1px;
-  background: color-mix(in srgb, var(--cyan) 42%, transparent);
+  display: none;
 }
 
 .setup-step-card:last-child::after {
@@ -7343,8 +7303,26 @@ onMounted(() => {
 }
 
 @media (max-width: 1320px) {
+  .training-console-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .training-workspace-rail {
+    position: static;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+
+  .training-workspace-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .training-workspace {
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .training-left-panel {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
   .training-knowledge-workspace,
@@ -7373,18 +7351,13 @@ onMounted(() => {
 }
 
 @media (max-width: 1080px) {
+  .training-console-layout,
   .training-workspace,
   .role-goal-grid,
-  .training-command-center,
-  .training-cockpit,
   .setup-flow-tabs,
   .training-right-panel,
   .training-batch-layout {
     grid-template-columns: 1fr;
-  }
-
-  .training-cockpit {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .setup-step-card::after {
@@ -7424,9 +7397,9 @@ onMounted(() => {
 }
 
 @media (max-width: 720px) {
-  .training-workspace-tabs,
-  .training-command-center,
-  .training-cockpit,
+  .training-workspace-rail,
+  .training-workspace-nav,
+  .training-workspace.plan-step-workspace,
   .training-form-grid.two,
   .training-form-grid.four,
   .training-left-panel .training-form-grid.two,
@@ -7447,13 +7420,13 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .training-flow-strip {
-    display: flex;
-    overflow-x: auto;
+  .training-workspace-nav button {
+    grid-template-columns: 38px minmax(0, 1fr);
   }
 
-  .training-flow-strip i {
-    flex: 0 0 28px;
+  .training-workspace-nav button b,
+  .training-workspace-nav button small {
+    grid-column: 2;
   }
 
   .role-profile-hero div {
