@@ -372,21 +372,38 @@ async function confirmDangerOnce(message: string, title: string, confirmButtonTe
 
 async function refreshDashboard() { // 刷新首页所有总览数据
   loading.value = true
+  // 首页只做总览展示，单个接口变慢或失败时不应该阻塞整页渲染。
+  const [healthResult, filesResult, dictionaryResult, conversationResult] = await Promise.allSettled([
+    fetchHealth(),
+    listKnowledgeFiles(),
+    listDictionaries(),
+    listConversations(1, 30),
+  ])
+
   try {
-    const [healthData, filesData, dictionaryData, conversationData] = await Promise.all([
-      fetchHealth(),
-      listKnowledgeFiles(),
-      listDictionaries(),
-      listConversations(1, 30),
-    ])
-    health.value = healthData
-    knowledgeFiles.value = filesData
-    dictionaries.value = dictionaryData
-    conversations.value = conversationData.items
-    conversationTotal.value = conversationData.total
-    selectedDocumentType.value ||= dictionaryDefaultCode('document_structure')
-    selectedSplitStrategy.value ||= dictionaryDefaultCode('split_strategy')
-    selectedUploadCollection.value ||= healthData.collection_name || 'agent'
+    if (healthResult.status === 'fulfilled') {
+      health.value = healthResult.value
+      selectedUploadCollection.value ||= healthResult.value.collection_name || 'agent'
+    }
+    if (filesResult.status === 'fulfilled') {
+      knowledgeFiles.value = filesResult.value
+    }
+    if (dictionaryResult.status === 'fulfilled') {
+      dictionaries.value = dictionaryResult.value
+      selectedDocumentType.value ||= dictionaryDefaultCode('document_structure')
+      selectedSplitStrategy.value ||= dictionaryDefaultCode('split_strategy')
+    }
+    if (conversationResult.status === 'fulfilled') {
+      conversations.value = conversationResult.value.items
+      conversationTotal.value = conversationResult.value.total
+    }
+
+    const failedCount = [healthResult, filesResult, dictionaryResult, conversationResult]
+      .filter((result) => result.status === 'rejected')
+      .length
+    if (failedCount > 0) {
+      ElMessage.warning(`首页有 ${failedCount} 个数据接口加载失败，已先展示可用数据`)
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '首页数据刷新失败')
   } finally {
@@ -808,7 +825,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-loading="loading" class="dashboard-page">
+  <div class="dashboard-page">
     <input
       ref="knowledgeFileInput"
       class="hidden-file-input"
@@ -858,8 +875,11 @@ onMounted(() => {
             :aria-selected="tab.active"
             @click="overviewActiveCollection = tab.collectionName"
           >
-            <span>{{ tab.collectionName }}</span>
-            <em>文件 {{ tab.indexed }}/{{ tab.total }} · 向量 {{ tab.points }}</em>
+            <span class="overview-collection-name">{{ tab.collectionName }}</span>
+            <span class="overview-collection-stats">
+              <em>文件 {{ tab.indexed }}/{{ tab.total }}</em>
+              <em>向量 {{ tab.points }}</em>
+            </span>
           </button>
         </div>
         <div class="data-table-lite dashboard-knowledge-table">
@@ -871,11 +891,11 @@ onMounted(() => {
               <em>{{ file.collection_name }} / {{ file.status }}</em>
             </el-tooltip>
           </div>
-          <p v-if="knowledgeFiles.length === 0 && overviewActiveCollectionPoints === 0">暂无知识库文件</p>
-          <p v-else-if="overviewKnowledgeFiles.length === 0 && overviewActiveCollectionPoints > 0">
+          <p v-if="knowledgeFiles.length === 0 && overviewActiveCollectionPoints === 0" class="overview-empty-state">暂无知识库文件</p>
+          <p v-else-if="overviewKnowledgeFiles.length === 0 && overviewActiveCollectionPoints > 0" class="overview-empty-state">
             当前向量库有 {{ overviewActiveCollectionPoints }} 个向量点，但没有普通知识库文件记录，可能是销售训练库或其他专用库。
           </p>
-          <p v-else-if="overviewKnowledgeFiles.length === 0">当前向量库暂无文件</p>
+          <p v-else-if="overviewKnowledgeFiles.length === 0" class="overview-empty-state">当前向量库暂无文件</p>
         </div>
         <el-pagination
           v-if="overviewKnowledgeFiles.length > 0"
