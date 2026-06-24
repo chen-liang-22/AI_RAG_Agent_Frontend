@@ -8,11 +8,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   ArrowLeft,
   ArrowRight,
-  BadgeCheck,
   BrainCircuit,
   ChevronUp,
-  CircleHelp,
-  Eye,
   FileText,
   Gauge,
   LoaderCircle,
@@ -20,13 +17,11 @@ import {
   Network,
   Play,
   Radar,
-  RefreshCw,
   Route,
   Send,
   ShieldCheck,
   Sparkles,
   Target,
-  Trash2,
   Trophy,
   UploadCloud,
   UserRoundCheck,
@@ -78,6 +73,19 @@ import {
   type TrainingTraineeProfilePayload,
   type TrainingTurnResponse,
 } from '../api'
+import {
+  asArray,
+  compactText,
+  displayOptionLabel,
+  displayValue,
+  hasDisplayValue,
+  objectEntries,
+  safeList,
+  uniqueList,
+  valueList,
+} from '../utils/trainingDisplay'
+import TrainingKnowledgeWorkspace from '../components/sales-training/TrainingKnowledgeWorkspace.vue'
+import TrainingReviewWorkspace from '../components/sales-training/TrainingReviewWorkspace.vue'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
 
@@ -158,7 +166,6 @@ const OVERSEAS_BD_SERVICE_FOCUS_FIELDS = new Set([
   'overseas_bd_service_core_focus',
   'overseas_bd_service_secondary_focus',
 ])
-const PROFILE_PREVIEW_LIMIT = 20
 const CUSTOMER_PROFILE_SUMMARIES: Record<string, string> = {
   wzf_customer_manager: '陌拜、需求挖掘、套餐推荐、成单推进',
   wm_ai_service: '线上跟进、产品介绍、报价处理、售后处理、样品扩展',
@@ -200,7 +207,6 @@ interface PlanEditDraft {
 }
 
 const selectedFile = ref<File | null>(null)
-const uploadFileInput = ref<HTMLInputElement | null>(null)
 const sourceType = ref('lms_case')
 const profileType = ref(DEFAULT_CUSTOMER_PROFILE_TYPE)
 const uploadResult = ref<TrainingKnowledgeUploadResponse | null>(null)
@@ -629,19 +635,8 @@ const latestCoachAnalysis = computed(() => {
   return last?.analysis || {}
 })
 
-function hasDisplayValue(value: unknown): boolean {
-  if (value === null || value === undefined) return false
-  if (Array.isArray(value)) return value.some((item) => hasDisplayValue(item))
-  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
-  return String(value).trim() !== ''
-}
-
 function compactProfileSources(values: Array<Record<string, unknown> | null | undefined>): Record<string, unknown>[] {
   return values.filter((item): item is Record<string, unknown> => Boolean(item) && hasDisplayValue(item))
-}
-
-function objectEntries(value: Record<string, unknown> = {}): Array<[string, unknown]> {
-  return Object.entries(value).filter(([, item]) => hasDisplayValue(item))
 }
 
 function profileValue(sources: Record<string, unknown>[], keys: string[]): unknown {
@@ -658,90 +653,6 @@ function profileFields(configs: ProfileFieldConfig[], sources: Record<string, un
   return configs
     .map<ProfileField>((config) => ({ label: config.label, value: profileValue(sources, config.keys) }))
     .filter((field) => hasDisplayValue(field.value))
-}
-
-function displayValue(value: unknown): string {
-  if (Array.isArray(value)) return value.join('、')
-  if (typeof value === 'object' && value) return JSON.stringify(value, null, 2)
-  return String(value ?? '')
-}
-
-function compactText(value: string | null | undefined, limit = PROFILE_PREVIEW_LIMIT): string {
-  const text = String(value || '').trim()
-  if (text.length <= limit) return text
-  return `${text.slice(0, limit)}...`
-}
-
-function valueList(value: unknown): string[] {
-  if (!hasDisplayValue(value)) return []
-  if (Array.isArray(value)) return value.flatMap((item) => valueList(item))
-  if (typeof value === 'object' && value) {
-    return objectEntries(value as Record<string, unknown>).map(([key, item]) => `${key}：${displayValue(item)}`)
-  }
-  return String(value).split(/\n+/).map((item) => item.trim()).filter(Boolean)
-}
-
-function safeList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((item) => String(item)) : []
-}
-
-function reportPointList(value: unknown): string[] {
-  // 训练评分报告里的命中点/遗漏点有时是对象数组，不能直接 String(item)，否则会显示 [object Object]。
-  return Array.isArray(value)
-    ? value.map((item) => formatReportPoint(item)).filter(Boolean)
-    : []
-}
-
-function formatReportPoint(value: unknown): string {
-  if (!hasDisplayValue(value)) return ''
-  if (typeof value !== 'object' || value === null) return String(value).trim()
-
-  const source = value as Record<string, unknown>
-  const title = firstDisplayValue(source, [
-    'point_name',
-    'name',
-    'title',
-    'dimension_name',
-    'ability',
-    'skill',
-    'label',
-  ])
-  const detail = firstDisplayValue(source, [
-    'description',
-    'detail',
-    'reason',
-    'evidence',
-    'comment',
-    'suggestion',
-    'advice',
-    'requirement',
-  ])
-  const score = firstDisplayValue(source, ['score', 'deduct_score', 'max_score'])
-  const level = firstDisplayValue(source, ['level', 'status'])
-
-  const parts: string[] = []
-  if (title) parts.push(title)
-  if (detail && detail !== title) parts.push(detail)
-  if (score) parts.push(`${score}分`)
-  if (level) parts.push(level)
-
-  return parts.length > 0 ? parts.join(' · ') : displayValue(value)
-}
-
-function firstDisplayValue(source: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = source[key]
-    if (hasDisplayValue(value)) return displayValue(value).trim()
-  }
-  return ''
-}
-
-function asArray(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null) : []
-}
-
-function uniqueList(items: string[]): string[] {
-  return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)))
 }
 
 function scorePoints(value: unknown): Record<string, unknown>[] {
@@ -1061,10 +972,6 @@ function traineePortraitOptions(fieldCode: string): DictionaryOption[] {
 function traineeOptionLabel(fieldCode: string, value: string): string {
   const option = traineePortraitOptions(fieldCode).find((item) => item.value === value)
   return option?.label || value
-}
-
-function displayOptionLabel(value: string, options: Record<string, string>): string {
-  return options[value] || value
 }
 
 function dictionaryItemLabel(items: DictionaryItemResponse[], code: string, fallbackLabels: Record<string, string>) {
@@ -1727,9 +1634,6 @@ function onFileChange(file: File | undefined) {
 function clearUploadArea() {
   selectedFile.value = null
   uploadResult.value = null
-  if (uploadFileInput.value) {
-    uploadFileInput.value.value = ''
-  }
 }
 
 function buildRoleGeneratePayload(extraDetailText = extraDetails.value) {
@@ -2539,215 +2443,64 @@ onMounted(() => {
       </aside>
 
       <main class="training-workspace-stage">
-    <section v-show="activeWorkspaceTab === 'knowledge'" class="training-knowledge-workspace">
-      <section class="training-panel">
-        <div class="panel-title panel-title-between">
-          <span class="panel-title-with-help">
-            <UploadCloud :size="16" />
-            训练资料上传
-            <el-tooltip :content="uploadHelpDescription" placement="top" effect="dark">
-              <CircleHelp :size="13" />
-            </el-tooltip>
-          </span>
-          <span class="panel-title-actions">
-            <em>{{ currentUploadStatus }}</em>
-            <el-button v-if="canClearUploadArea" text size="small" @click="clearUploadArea">清空上传区域</el-button>
-          </span>
-        </div>
-        <div class="training-upload-zone">
-          <input ref="uploadFileInput" type="file" accept=".docx,.pdf,.txt" @change="onFileChange(($event.target as HTMLInputElement).files?.[0])" />
-          <UploadCloud :size="30" />
-          <strong>{{ selectedFile?.name || '选择 LMS 案例文件' }}</strong>
-          <span>上传后先生成切片预览和质量报告，人工确认后才写入 sales_training_cases。</span>
-        </div>
-        <el-button class="tech-button primary full" :icon="UploadCloud" :loading="uploading" @click="uploadKnowledge">
-          上传并生成预览
-        </el-button>
-        <div v-if="uploadResult" class="training-upload-feedback">
-          <div class="training-upload-result" :class="{ duplicated: Boolean(uploadResult.duplicate_of) }">
-            <BadgeCheck :size="16" />
-            <div>
-              <strong>{{ uploadResult.duplicate_of ? '资料已存在，已复用历史批次' : uploadResult.status === 'published' ? '资料已发布并完成入库' : '资料已保存，等待确认发布' }}</strong>
-              <span>{{ uploadResult.source_file || '训练资料' }} · {{ uploadResult.chunk_count }} 切片 · 批次 {{ uploadResult.batch_id }}</span>
-            </div>
-          </div>
-          <div class="training-kpi-grid knowledge">
-            <div><strong>{{ currentUploadChunkCount }}</strong><span>切片数量</span></div>
-            <div><strong>{{ currentUploadPointCount }}</strong><span>向量点</span></div>
-            <div><strong>{{ currentUploadStatus }}</strong><span>入库状态</span></div>
-            <div><strong>{{ currentUploadDuplicateText }}</strong><span>重复校验</span></div>
-          </div>
-          <div v-if="!uploadResult.duplicate_of && uploadQualityReport.score !== undefined" class="training-quality-card" :class="qualityLevelClass(uploadQualityReport.level)">
-            <div>
-              <strong>{{ uploadQualityReport.score }} 分</strong>
-              <span>{{ qualityLevelLabel(uploadQualityReport.level) }} · {{ uploadQualityReport.summary }}</span>
-            </div>
-            <div class="quality-metric-row">
-              <span>案例 {{ displayValue(uploadQualityMetrics.case_count ?? 0) }}</span>
-              <span>切片 {{ displayValue(uploadQualityMetrics.chunk_count ?? 0) }}</span>
-              <span>最大 {{ displayValue(uploadQualityMetrics.max_chunk_chars ?? 0) }} 字</span>
-            </div>
-            <div class="quality-metric-row">
-              <span>{{ uploadQualitySplitText }}</span>
-              <span v-if="uploadQualityReport.llm_fallback_attempted">
-                规则 {{ displayValue(uploadQualityReport.rule_score ?? '-') }} 分
-              </span>
-              <span v-if="uploadQualityReport.llm_score !== undefined">
-                LLM {{ displayValue(uploadQualityReport.llm_score) }} 分
-              </span>
-            </div>
-            <div v-if="uploadPublishValidation" class="quality-validation-row">
-              <strong>{{ uploadPublishValidation.passed ? '发布验证通过' : '发布验证需检查' }}</strong>
-              <span>
-                {{ uploadPublishValidation.summary }}
-                命中率 {{ displayValue(uploadPublishValidation.hit_ratio ?? 0) }}
-              </span>
-            </div>
-            <ul v-if="uploadQualityWarnings.length">
-              <li v-for="warning in uploadQualityWarnings" :key="warning">{{ warning }}</li>
-            </ul>
-            <el-button
-              v-if="uploadResult.status === 'pending_review' || uploadResult.status === 'publish_failed'"
-              class="tech-button primary full"
-              :loading="publishingBatchId === uploadResult.batch_id"
-              @click="publishTrainingBatch(uploadResult.batch_id)"
-            >
-              确认发布到训练库
-            </el-button>
-            <el-button
-              v-if="uploadResult.status === 'pending_review'"
-              class="tech-button full"
-              :icon="Sparkles"
-              :loading="reparsingBatchId === uploadResult.batch_id"
-              @click="reparseTrainingBatch(uploadResult.batch_id)"
-            >
-              LLM 重新切分
-            </el-button>
-          </div>
-        </div>
-      </section>
-
-      <section class="training-panel">
-        <div class="panel-title panel-title-between">
-          <span><FileText :size="16" /> 已上传资料</span>
-          <el-button text :loading="loadingBatches" @click="refreshTrainingBatches">刷新</el-button>
-        </div>
-        <div class="training-batch-layout">
-          <div class="training-batch-list" v-loading="loadingBatches">
-            <article
-              v-for="batch in trainingBatches"
-              :key="batch.batch_id"
-              class="training-batch-item"
-              :class="{ active: activeBatchId === batch.batch_id }"
-              @click="openTrainingBatch(batch)"
-            >
-              <div class="batch-item-main">
-                <strong>{{ batch.source_file }}</strong>
-                <span>
-                  V{{ batch.version_no || 1 }} · {{ batch.is_current ? '当前版本' : batchStatusLabel(batch.status) }}
-                  · {{ batch.chunk_count }} 切片 · {{ batch.point_count }} 向量点
-                </span>
-                <em>{{ formatTime(batch.updated_at) }}</em>
-              </div>
-              <div class="batch-item-meta">
-                <span>MD5 去重</span>
-                <code>{{ batch.file_md5 ? batch.file_md5.slice(0, 10) : '未记录' }}</code>
-              </div>
-              <div class="batch-action-row" @click.stop>
-                <el-button
-                  v-if="batch.status === 'pending_review' || batch.status === 'publish_failed'"
-                  class="batch-icon-button"
-                  :icon="BadgeCheck"
-                  :loading="publishingBatchId === batch.batch_id"
-                  @click="publishTrainingBatch(batch.batch_id)"
-                >
-                  发布
-                </el-button>
-                <el-button
-                  v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed' || batch.status === 'publish_failed'"
-                  class="batch-icon-button"
-                  :icon="Sparkles"
-                  :loading="reparsingBatchId === batch.batch_id"
-                  @click="reparseTrainingBatch(batch)"
-                >
-                  重切
-                </el-button>
-                <el-button
-                  v-if="batch.status === 'archived'"
-                  class="batch-icon-button"
-                  :icon="RefreshCw"
-                  :loading="rollingBackBatchId === batch.batch_id"
-                  @click="rollbackTrainingBatch(batch)"
-                >
-                  回滚
-                </el-button>
-                <el-button
-                  v-if="batch.version_group_id"
-                  class="batch-icon-button"
-                  :icon="Route"
-                  @click="openBatchVersions(batch)"
-                >
-                  版本
-                </el-button>
-                <el-button
-                  class="batch-icon-button"
-                  :icon="Eye"
-                  :loading="previewingBatchId === batch.batch_id"
-                  @click="previewTrainingBatch(batch)"
-                >
-                  预览
-                </el-button>
-                <el-button
-                  class="batch-icon-button danger"
-                  :icon="Trash2"
-                  :loading="deletingBatchId === batch.batch_id"
-                  @click="deleteTrainingBatch(batch)"
-                >
-                  删除
-                </el-button>
-              </div>
-            </article>
-            <div v-if="trainingBatches.length === 0" class="training-empty compact">
-              <FileText :size="24" />
-              <span>暂无训练资料。</span>
-            </div>
-            <el-pagination
-              v-model:current-page="batchPage"
-              size="small"
-              layout="prev, pager, next"
-              :page-size="6"
-              :total="batchTotal"
-              @current-change="refreshTrainingBatches"
-            />
-          </div>
-          <div class="chunk-summary-list large" v-loading="loadingChunks">
-            <article
-              v-for="summary in chunkTypeSummaries"
-              :key="summary.casePart"
-              class="clickable"
-              role="button"
-              tabindex="0"
-              @click="openChunkSummaryDetail(summary)"
-              @keydown.enter.prevent="openChunkSummaryDetail(summary)"
-              @keydown.space.prevent="openChunkSummaryDetail(summary)"
-            >
-              <div :title="chunkSummaryTitle(summary)">
-                <strong>{{ summary.label }}</strong>
-                <button type="button" @click.stop="openChunkSummaryDetail(summary)">{{ summary.count }} 条分片</button>
-              </div>
-              <p>{{ summary.sampleText }}</p>
-              <footer>
-                <span v-for="usage in summary.usageLabels" :key="`${summary.casePart}-${usage}`">{{ usage }}</span>
-              </footer>
-            </article>
-            <div v-if="chunkTypeSummaries.length === 0" class="training-empty compact">
-              <FileText :size="24" />
-              <span>点击左侧资料查看资料结构。</span>
-            </div>
-          </div>
-        </div>
-      </section>
-    </section>
+    <TrainingKnowledgeWorkspace
+      v-show="activeWorkspaceTab === 'knowledge'"
+      v-model:batch-page="batchPage"
+      v-model:chunk-detail-visible="chunkDetailVisible"
+      v-model:version-dialog-visible="versionDialogVisible"
+      v-model:training-preview-visible="trainingPreviewVisible"
+      :selected-file="selectedFile"
+      :upload-result="uploadResult"
+      :training-batches="trainingBatches"
+      :batch-total="batchTotal"
+      :active-batch-id="activeBatchId"
+      :chunk-type-summaries="chunkTypeSummaries"
+      :active-chunk-type-chunks="activeChunkTypeChunks"
+      :active-chunk-summary="activeChunkSummary"
+      :batch-versions="batchVersions"
+      :active-version-group-id="activeVersionGroupId"
+      :training-preview="trainingPreview"
+      :loading-batches="loadingBatches"
+      :loading-chunks="loadingChunks"
+      :uploading="uploading"
+      :publishing-batch-id="publishingBatchId"
+      :rolling-back-batch-id="rollingBackBatchId"
+      :reparsing-batch-id="reparsingBatchId"
+      :previewing-batch-id="previewingBatchId"
+      :deleting-batch-id="deletingBatchId"
+      :version-loading="versionLoading"
+      :upload-help-description="uploadHelpDescription"
+      :current-upload-chunk-count="currentUploadChunkCount"
+      :current-upload-point-count="currentUploadPointCount"
+      :current-upload-status="currentUploadStatus"
+      :current-upload-duplicate-text="currentUploadDuplicateText"
+      :can-clear-upload-area="canClearUploadArea"
+      :upload-quality-report="uploadQualityReport"
+      :upload-quality-warnings="uploadQualityWarnings"
+      :upload-quality-metrics="uploadQualityMetrics"
+      :upload-quality-split-text="uploadQualitySplitText"
+      :upload-publish-validation="uploadPublishValidation"
+      :format-time="formatTime"
+      :batch-status-label="batchStatusLabel"
+      :quality-level-label="qualityLevelLabel"
+      :quality-level-class="qualityLevelClass"
+      :chunk-summary-title="chunkSummaryTitle"
+      :chunk-usage-label="chunkUsageLabel"
+      :case-part-label="casePartLabel"
+      :chunk-detail-meta="chunkDetailMeta"
+      @file-change="onFileChange"
+      @clear-upload="clearUploadArea"
+      @upload="uploadKnowledge"
+      @refresh-batches="refreshTrainingBatches"
+      @publish-batch="publishTrainingBatch"
+      @reparse-batch="reparseTrainingBatch"
+      @rollback-batch="rollbackTrainingBatch"
+      @open-batch-versions="openBatchVersions"
+      @open-training-batch="openTrainingBatch"
+      @preview-batch="previewTrainingBatch"
+      @delete-batch="deleteTrainingBatch"
+      @open-chunk-summary="openChunkSummaryDetail"
+    />
 
     <section
       v-show="activeWorkspaceTab === 'setup'"
@@ -3220,64 +2973,19 @@ onMounted(() => {
       </aside>
     </section>
 
-    <section v-show="activeWorkspaceTab === 'review'" class="training-review-workspace">
-      <section class="training-panel history-panel">
-        <div class="panel-title panel-title-between">
-          <span><Route :size="16" /> 最近训练</span>
-          <el-button text :loading="loadingHistory" @click="refreshTrainingHistory">刷新</el-button>
-        </div>
-        <div class="training-history-list" v-loading="loadingHistory || loadingDetail">
-          <button v-for="item in trainingHistories" :key="item.session_id" type="button" @click="openTrainingHistory(item)">
-            <strong>{{ formatTime(item.started_at) }}</strong>
-            <span>{{ item.status }} · {{ item.answered_count }}/{{ item.round_limit }} 轮</span>
-            <em>{{ item.total_score === null || item.total_score === undefined ? '未评分' : `${item.total_score}分 / ${item.level || '-'}` }}</em>
-          </button>
-          <div v-if="trainingHistories.length === 0" class="training-empty compact">
-            <Route :size="24" />
-            <span>暂无训练历史。</span>
-          </div>
-        </div>
-        <el-pagination
-          v-model:current-page="historyPage"
-          size="small"
-          layout="prev, pager, next"
-          :page-size="6"
-          :total="historyTotal"
-          @current-change="refreshTrainingHistory"
-        />
-      </section>
-      <section class="training-panel score-panel">
-        <div class="panel-title panel-title-between">
-          <span><Trophy :size="16" /> 评分报告</span>
-          <em>{{ scoreResult ? `${scoreResult.total_score} 分` : '未评分' }}</em>
-        </div>
-        <template v-if="scoreResult">
-          <div class="score-ring">
-            <strong>{{ scoreResult.total_score }}</strong>
-            <span>{{ scoreResult.level }}</span>
-          </div>
-          <div class="score-breakdown">
-            <span>通用能力 {{ scoreResult.general_score }}/40</span>
-            <span>阶段能力 {{ scoreResult.stage_score }}/60</span>
-            <span>扣分 {{ scoreResult.penalty_score }}</span>
-          </div>
-          <div class="report-list">
-            <b>命中点</b>
-            <p v-for="item in reportPointList(report.hit_points)" :key="item">{{ item }}</p>
-            <b>遗漏点</b>
-            <p v-for="item in reportPointList(report.missing_points)" :key="item">{{ item }}</p>
-            <b>改进建议</b>
-            <p>{{ displayValue(report.improvement_advice || '暂无') }}</p>
-            <b>参考话术</b>
-            <p>{{ displayValue(report.reference_script || '暂无') }}</p>
-          </div>
-        </template>
-        <div v-else class="training-empty compact">
-          <Trophy :size="24" />
-          <span>选择一场训练或完成评分后查看报告。</span>
-        </div>
-      </section>
-    </section>
+    <TrainingReviewWorkspace
+      v-show="activeWorkspaceTab === 'review'"
+      v-model:history-page="historyPage"
+      :training-histories="trainingHistories"
+      :history-total="historyTotal"
+      :score-result="scoreResult"
+      :report="report"
+      :loading-history="loadingHistory"
+      :loading-detail="loadingDetail"
+      :format-time="formatTime"
+      @refresh-history="refreshTrainingHistory"
+      @open-history="openTrainingHistory"
+    />
       </main>
     </section>
 
@@ -3745,151 +3453,7 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="chunkDetailVisible"
-      width="980px"
-      class="profile-config-dialog chunk-detail-dialog"
-      destroy-on-close
-    >
-      <template #header>
-        <div class="chunk-detail-title">
-          <FileText :size="20" />
-          <strong>{{ activeChunkSummary?.label || '切片详情' }}</strong>
-          <span>{{ activeChunkSummary?.count || 0 }} 条分片 · {{ activeChunkSummary?.usageLabels.join('、') || '未标记用途' }}</span>
-        </div>
-      </template>
-      <section class="chunk-detail-body">
-        <article
-          v-for="(chunk, index) in activeChunkTypeChunks"
-          :key="chunk.chunk_id"
-          class="chunk-detail-item"
-        >
-          <header>
-            <strong>{{ activeChunkSummary?.label || casePartLabel(chunk.case_part) }} {{ index + 1 }}</strong>
-            <span>{{ chunkDetailMeta(chunk, index) }}</span>
-          </header>
-          <p>{{ chunk.chunk_text }}</p>
-          <footer>
-            <code>{{ chunk.chunk_id }}</code>
-            <span>{{ chunk.case_part }}</span>
-          </footer>
-        </article>
-        <div v-if="activeChunkTypeChunks.length === 0" class="training-empty compact">
-          <FileText :size="24" />
-          <span>当前类型暂无切片。</span>
-        </div>
-      </section>
-      <template #footer>
-        <el-button @click="chunkDetailVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
 
-    <el-dialog
-      v-model="versionDialogVisible"
-      width="940px"
-      class="profile-config-dialog version-chain-dialog"
-      destroy-on-close
-    >
-      <template #header>
-        <div class="chunk-detail-title">
-          <Route :size="20" />
-          <strong>训练资料版本链</strong>
-          <span>版本组 {{ activeVersionGroupId || '未加载' }} · {{ batchVersions.length }} 个版本</span>
-        </div>
-      </template>
-      <section class="version-chain-body" v-loading="versionLoading">
-        <article
-          v-for="batch in batchVersions"
-          :key="batch.batch_id"
-          class="version-chain-item"
-          :class="{ current: batch.is_current }"
-        >
-          <header>
-            <div>
-              <strong>V{{ batch.version_no || 1 }} · {{ batch.source_file }}</strong>
-              <span>{{ formatTime(batch.updated_at) }}</span>
-            </div>
-            <em>{{ batch.is_current ? '当前生效' : batchStatusLabel(batch.status) }}</em>
-          </header>
-          <div class="version-meta-grid">
-            <span>状态：{{ batchStatusLabel(batch.status) }}</span>
-            <span>切片：{{ batch.chunk_count }}</span>
-            <span>向量点：{{ batch.point_count }}</span>
-            <span>质量：{{ displayValue(batch.quality_report?.score ?? '-') }} 分</span>
-          </div>
-          <p v-if="batch.error_message">{{ batch.error_message }}</p>
-          <footer>
-            <el-button
-              v-if="batch.status === 'pending_review' || batch.status === 'publish_failed'"
-              class="batch-icon-button"
-              :icon="BadgeCheck"
-              :loading="publishingBatchId === batch.batch_id"
-              @click="publishTrainingBatch(batch.batch_id)"
-            >
-              发布
-            </el-button>
-            <el-button
-              v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed' || batch.status === 'publish_failed'"
-              class="batch-icon-button"
-              :icon="Sparkles"
-              :loading="reparsingBatchId === batch.batch_id"
-              @click="reparseTrainingBatch(batch)"
-            >
-              重切
-            </el-button>
-            <el-button
-              v-if="batch.status === 'archived'"
-              class="batch-icon-button"
-              :icon="RefreshCw"
-              :loading="rollingBackBatchId === batch.batch_id"
-              @click="rollbackTrainingBatch(batch)"
-            >
-              回滚
-            </el-button>
-            <el-button class="batch-icon-button" :icon="FileText" @click="openTrainingBatch(batch)">
-              查看切片
-            </el-button>
-            <el-button
-              class="batch-icon-button"
-              :icon="Eye"
-              :loading="previewingBatchId === batch.batch_id"
-              @click="previewTrainingBatch(batch)"
-            >
-              预览
-            </el-button>
-          </footer>
-        </article>
-        <div v-if="!versionLoading && batchVersions.length === 0" class="training-empty compact">
-          <Route :size="24" />
-          <span>暂无版本记录。</span>
-        </div>
-      </section>
-      <template #footer>
-        <el-button @click="versionDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="trainingPreviewVisible"
-      title="训练资料预览"
-      width="960px"
-      class="profile-config-dialog training-preview-dialog"
-      destroy-on-close
-    >
-      <section v-if="trainingPreview" class="training-preview-body">
-        <div class="preview-file-head">
-          <div>
-            <strong>{{ trainingPreview.batch.source_file }}</strong>
-            <span>{{ trainingPreview.batch.chunk_count }} 个切片 · {{ trainingPreview.preview_type }}</span>
-          </div>
-          <em v-if="trainingPreview.truncated">内容较长，已截断展示</em>
-        </div>
-        <pre>{{ trainingPreview.content || '该资料没有解析出可预览文本。' }}</pre>
-      </section>
-      <template #footer>
-        <el-button @click="trainingPreviewVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog
       v-model="supplementDialogVisible"
@@ -4498,147 +4062,6 @@ onMounted(() => {
   box-shadow: 0 0 12px color-mix(in srgb, var(--cyan) 60%, transparent);
 }
 
-.training-knowledge-workspace {
-  display: grid;
-  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.training-batch-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: 12px;
-  min-height: 520px;
-}
-
-.training-batch-list {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.training-batch-item {
-  position: relative;
-  display: grid;
-  gap: 9px;
-  width: 100%;
-  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: 14px;
-  padding: 11px 12px;
-  color: var(--text);
-  text-align: left;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 44%),
-    color-mix(in srgb, var(--surface) 76%, transparent);
-  cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.training-batch-item:hover,
-.training-batch-item.active {
-  border-color: color-mix(in srgb, var(--cyan) 62%, var(--primary));
-  box-shadow: 0 0 22px color-mix(in srgb, var(--cyan) 18%, transparent);
-  transform: translateY(-1px);
-}
-
-.training-batch-item.active::before {
-  position: absolute;
-  inset: 9px auto 9px 8px;
-  width: 3px;
-  border-radius: 999px;
-  content: '';
-  background: linear-gradient(180deg, var(--cyan), var(--primary));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--cyan) 58%, transparent);
-}
-
-.batch-item-main {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.batch-item-main strong,
-.batch-item-main span,
-.batch-item-main em {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.training-batch-item.active .batch-item-main strong,
-.training-batch-item.active .batch-item-main span,
-.training-batch-item.active .batch-item-main em {
-  padding-left: 10px;
-}
-
-.batch-item-main span,
-.batch-item-main em {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-style: normal;
-}
-
-.batch-item-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--cyan) 18%, transparent);
-  border-radius: 10px;
-  padding: 6px 8px;
-  background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
-}
-
-.batch-item-meta span {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.batch-item-meta code {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--cyan);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.batch-action-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.batch-icon-button.el-button {
-  min-height: 32px;
-  border-color: color-mix(in srgb, var(--cyan) 34%, var(--line));
-  color: var(--text);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 10%, transparent), transparent 58%),
-    color-mix(in srgb, var(--surface-strong) 82%, transparent);
-}
-
-.batch-icon-button.el-button:hover {
-  border-color: color-mix(in srgb, var(--cyan) 62%, var(--primary));
-  color: var(--cyan);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--cyan) 18%, transparent);
-}
-
-.batch-icon-button.danger.el-button {
-  border-color: color-mix(in srgb, #ff6b7a 40%, var(--line));
-  color: color-mix(in srgb, #ff6b7a 78%, var(--text));
-}
-
-.batch-icon-button.danger.el-button:hover {
-  border-color: color-mix(in srgb, #ff6b7a 72%, var(--line));
-  color: #ff6b7a;
-  box-shadow: 0 0 16px color-mix(in srgb, #ff6b7a 18%, transparent);
-}
-
 .training-workspace {
   display: grid;
   grid-template-columns: minmax(230px, 290px) minmax(720px, 1fr) minmax(360px, 420px);
@@ -4683,146 +4106,6 @@ onMounted(() => {
   min-width: 0;
 }
 
-.training-upload-zone {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 7px;
-  margin-bottom: 12px;
-  border: 1px dashed color-mix(in srgb, var(--cyan) 42%, var(--line));
-  border-radius: 16px;
-  padding: 18px;
-  color: var(--text);
-  text-align: center;
-  background:
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--cyan) 10%, transparent) 0 1px, transparent 1px 34px),
-    color-mix(in srgb, var(--surface) 68%, transparent);
-}
-
-.training-upload-zone input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.training-upload-result {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 9px;
-  align-items: start;
-  margin-top: 12px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 32%, var(--line));
-  border-radius: 14px;
-  padding: 10px;
-  color: var(--text);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 11%, transparent), transparent 52%),
-    color-mix(in srgb, var(--surface-strong) 78%, transparent);
-}
-
-.training-upload-result svg {
-  margin-top: 2px;
-  color: var(--cyan);
-}
-
-.training-upload-result div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.training-upload-result strong,
-.training-upload-result span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.training-upload-result span {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.training-upload-result.duplicated {
-  border-color: color-mix(in srgb, #f6c65b 46%, var(--line));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, #f6c65b 11%, transparent), transparent 52%),
-    color-mix(in srgb, var(--surface-strong) 78%, transparent);
-}
-
-.training-upload-result.duplicated svg {
-  color: #f6c65b;
-}
-
-.training-upload-feedback {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.training-quality-card {
-  display: grid;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 30%, var(--line));
-  border-radius: 14px;
-  padding: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 9%, transparent), transparent 54%),
-    color-mix(in srgb, var(--surface-strong) 82%, transparent);
-}
-
-.training-quality-card.good {
-  border-color: color-mix(in srgb, #31d0aa 42%, var(--line));
-}
-
-.training-quality-card.review {
-  border-color: color-mix(in srgb, #f6c65b 46%, var(--line));
-}
-
-.training-quality-card.poor {
-  border-color: color-mix(in srgb, #ff6b7a 46%, var(--line));
-}
-
-.training-quality-card > div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.training-quality-card strong {
-  color: var(--primary);
-  font-size: 22px;
-}
-
-.training-quality-card span,
-.training-quality-card li {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.quality-metric-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.quality-metric-row span {
-  border: 1px solid color-mix(in srgb, var(--cyan) 20%, var(--line));
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: color-mix(in srgb, var(--surface) 68%, transparent);
-}
-
-.training-quality-card ul {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding-left: 18px;
-}
-
-.training-upload-zone span,
 .training-field span,
 .training-form-grid span {
   color: var(--text-muted);
@@ -5275,72 +4558,6 @@ onMounted(() => {
 :deep(.profile-config-dialog .el-input__wrapper),
 :deep(.profile-config-dialog .el-select__wrapper) {
   min-height: 38px;
-}
-
-.training-preview-body {
-  display: grid;
-  gap: 12px;
-}
-
-.preview-file-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 24%, var(--line));
-  border-radius: 14px;
-  padding: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 10%, transparent), transparent 52%),
-    color-mix(in srgb, var(--surface-strong) 82%, transparent);
-}
-
-.preview-file-head div {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.preview-file-head strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-file-head span,
-.preview-file-head em {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-style: normal;
-}
-
-.preview-file-head em {
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, #f6c65b 44%, var(--line));
-  border-radius: 999px;
-  padding: 4px 8px;
-  color: #f6c65b;
-  background: color-mix(in srgb, #f6c65b 9%, transparent);
-}
-
-.training-preview-body pre {
-  max-height: 58vh;
-  overflow: auto;
-  margin: 0;
-  border: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
-  border-radius: 14px;
-  padding: 14px;
-  color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 36%),
-    color-mix(in srgb, var(--surface) 88%, transparent);
 }
 
 .supplement-dialog-title {
@@ -5946,31 +5163,6 @@ onMounted(() => {
   margin-top: 12px;
 }
 
-.training-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.training-kpi-grid div {
-  display: grid;
-  gap: 3px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 9px;
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-}
-
-.training-kpi-grid strong {
-  font-size: 19px;
-}
-
-.training-kpi-grid span {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
 .setup-flow-content,
 .role-goal-grid {
   display: grid;
@@ -6272,10 +5464,7 @@ onMounted(() => {
 .profile-section,
 .goal-core,
 .condition-grid div,
-.retrieval-strip,
-.score-breakdown,
-.report-list p,
-.training-history-list button {
+.retrieval-strip {
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
@@ -6491,7 +5680,6 @@ onMounted(() => {
 }
 
 .condition-grid p,
-.report-list p,
 .training-bubble p {
   margin: 0;
   color: var(--text-soft);
@@ -6727,13 +5915,6 @@ onMounted(() => {
   line-height: 1.55;
 }
 
-.training-review-workspace {
-  display: grid;
-  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
 .training-chat-shell {
   display: grid;
   grid-template-rows: auto minmax(360px, 1fr) auto;
@@ -6906,361 +6087,6 @@ onMounted(() => {
   align-items: stretch;
 }
 
-.chunk-summary-list,
-.training-history-list,
-.report-list {
-  display: grid;
-  gap: 8px;
-}
-
-.chunk-summary-list {
-  max-height: 418px;
-  overflow-y: auto;
-}
-
-.chunk-summary-list.large {
-  align-content: start;
-  max-height: 620px;
-  min-height: 520px;
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  border-radius: 16px;
-  padding: 10px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 5%, transparent), transparent 45%),
-    color-mix(in srgb, var(--surface-strong) 54%, transparent);
-}
-
-.chunk-summary-list.large p {
-  -webkit-line-clamp: 7;
-}
-
-.training-history-list {
-  min-height: 112px;
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.training-history-list button {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 10px;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
-}
-
-.training-history-list button:hover {
-  border-color: color-mix(in srgb, var(--cyan) 46%, var(--line));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--cyan) 18%, transparent);
-  transform: translateY(-1px);
-}
-
-.training-history-list span,
-.training-history-list em {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-style: normal;
-}
-
-.chunk-summary-list article {
-  display: grid;
-  gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
-  border-radius: 14px;
-  padding: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--primary) 8%, transparent), transparent 45%),
-    color-mix(in srgb, var(--surface) 66%, transparent);
-}
-
-.chunk-summary-list article.clickable {
-  cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-}
-
-.chunk-summary-list article.clickable:hover,
-.chunk-summary-list article.clickable:focus-visible {
-  border-color: color-mix(in srgb, var(--cyan) 58%, var(--primary));
-  box-shadow: 0 0 20px color-mix(in srgb, var(--cyan) 18%, transparent);
-  outline: none;
-  transform: translateY(-1px);
-}
-
-.chunk-summary-list article > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.chunk-summary-list strong {
-  color: var(--text);
-  font-size: 15px;
-}
-
-.chunk-summary-list article > div span,
-.chunk-summary-list article > div button {
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
-  border-radius: 999px;
-  padding: 3px 8px;
-  color: var(--cyan);
-  background: color-mix(in srgb, var(--cyan) 7%, transparent);
-  font-size: 12px;
-}
-
-.chunk-summary-list article > div button {
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.chunk-summary-list article > div button:hover {
-  border-color: color-mix(in srgb, var(--cyan) 70%, var(--primary));
-  color: color-mix(in srgb, var(--text) 82%, var(--cyan));
-}
-
-.chunk-summary-list p {
-  display: -webkit-box;
-  overflow: hidden;
-  margin: 0;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  color: var(--text-soft);
-  font-size: 12px;
-  line-height: 1.65;
-}
-
-.chunk-summary-list footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.chunk-summary-list footer span {
-  border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line));
-  border-radius: 999px;
-  padding: 3px 8px;
-  color: color-mix(in srgb, var(--text) 72%, var(--green));
-  background: color-mix(in srgb, var(--green) 8%, transparent);
-  font-size: 12px;
-}
-
-.chunk-detail-title {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 10px;
-  align-items: center;
-}
-
-.chunk-detail-title svg {
-  grid-row: 1 / 3;
-  color: var(--cyan);
-}
-
-.chunk-detail-title strong {
-  color: var(--text);
-  font-size: 18px;
-}
-
-.chunk-detail-title span {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.chunk-detail-body {
-  display: grid;
-  gap: 12px;
-  max-height: 68vh;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.chunk-detail-item {
-  display: grid;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
-  border-radius: 8px;
-  padding: 14px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 48%),
-    color-mix(in srgb, var(--surface-strong) 62%, transparent);
-}
-
-.chunk-detail-item header {
-  display: grid;
-  gap: 4px;
-}
-
-.chunk-detail-item header strong {
-  color: var(--text);
-  font-size: 15px;
-}
-
-.chunk-detail-item header span {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.chunk-detail-item p {
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.75;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.chunk-detail-item footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chunk-detail-item footer code,
-.chunk-detail-item footer span {
-  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
-  border-radius: 999px;
-  padding: 3px 8px;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-  font-size: 11px;
-}
-
-.version-chain-body {
-  display: grid;
-  gap: 12px;
-  min-height: 120px;
-  max-height: 68vh;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.version-chain-item {
-  display: grid;
-  gap: 11px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
-  border-radius: 8px;
-  padding: 14px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 50%),
-    color-mix(in srgb, var(--surface-strong) 68%, transparent);
-}
-
-.version-chain-item.current {
-  border-color: color-mix(in srgb, var(--green) 44%, var(--cyan));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--green) 12%, transparent);
-}
-
-.version-chain-item header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.version-chain-item header div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.version-chain-item header strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.version-chain-item header span,
-.version-chain-item p {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.version-chain-item header em {
-  flex-shrink: 0;
-  border: 1px solid color-mix(in srgb, var(--green) 34%, var(--line));
-  border-radius: 999px;
-  padding: 4px 9px;
-  color: color-mix(in srgb, var(--green) 76%, var(--text));
-  background: color-mix(in srgb, var(--green) 9%, transparent);
-  font-size: 12px;
-  font-style: normal;
-}
-
-.version-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.version-meta-grid span {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 8px;
-  padding: 7px 8px;
-  color: var(--text-soft);
-  background: color-mix(in srgb, var(--surface) 58%, transparent);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.version-chain-item footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.score-ring {
-  display: grid;
-  place-items: center;
-  gap: 3px;
-  width: 128px;
-  height: 128px;
-  margin: 4px auto 12px;
-  border: 1px solid color-mix(in srgb, var(--cyan) 42%, var(--line));
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, color-mix(in srgb, var(--surface) 86%, transparent) 0 54%, transparent 55%),
-    conic-gradient(var(--cyan), var(--primary), var(--green), var(--cyan));
-  box-shadow: 0 0 26px color-mix(in srgb, var(--cyan) 28%, transparent);
-}
-
-.score-ring strong {
-  font-size: 34px;
-}
-
-.score-ring span {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.score-breakdown {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  margin-bottom: 10px;
-}
-
-.score-breakdown span,
-.report-list b {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.report-list p {
-  padding: 8px 10px;
-  font-size: 12px;
-}
-
 .training-empty {
   display: grid;
   place-items: center;
@@ -7325,9 +6151,7 @@ onMounted(() => {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
-  .training-knowledge-workspace,
-  .training-chat-workspace,
-  .training-review-workspace {
+  .training-chat-workspace {
     grid-template-columns: 1fr;
   }
 
@@ -7355,8 +6179,7 @@ onMounted(() => {
   .training-workspace,
   .role-goal-grid,
   .setup-flow-tabs,
-  .training-right-panel,
-  .training-batch-layout {
+  .training-right-panel {
     grid-template-columns: 1fr;
   }
 
@@ -7414,7 +6237,6 @@ onMounted(() => {
   .plan-object-grid,
   .plan-json-grid,
   .condition-grid,
-  .training-kpi-grid,
   .composer-row,
   .training-chat-metrics {
     grid-template-columns: 1fr;
