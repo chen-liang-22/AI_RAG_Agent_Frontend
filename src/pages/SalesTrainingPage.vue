@@ -2014,7 +2014,7 @@ async function deleteTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
 
   deletingBatchId.value = batch.batch_id
   try {
-    // 后端采用“Qdrant 删除向量 + SQLite 批次软删除”的方式。
+    // 后端走统一文件资产删除链路：硬删除 MySQL 批次/documents 记录，并清理 Qdrant 与 MinIO。
     await deleteTrainingKnowledgeBatch(batch.batch_id)
     ElMessage.success('训练资料已删除')
     if (activeBatchId.value === batch.batch_id) {
