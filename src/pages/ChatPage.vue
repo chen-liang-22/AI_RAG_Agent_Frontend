@@ -56,11 +56,13 @@ import {
   type KnowledgeUploadPreviewResponse, // 上传预览响应类型
   type KnowledgeUploadRecommendResponse, // 模型推荐切分方式响应类型
   type ModelMode, // 回答模型档位类型
+  type AuthUser, // 当前登录用户类型
 } from '../api' // 前端 API 请求封装
 
 const props = defineProps<{
   themeMode?: ThemeMode
   historyRequest?: { token: number; conversationId: string } | null
+  currentUser?: AuthUser | null
 }>()
 
 interface ChatMessage { // 页面聊天消息的数据结构
@@ -185,8 +187,8 @@ const selectedCollectionName = ref('agent') // 当前聊天检索使用的 Qdran
 const selectedUploadCollection = ref('agent') // 当前上传文件将写入的 Qdrant collection
 
 // userId 会随每次请求传给后端。
-// 后端工具 get_user_id 会读取这个值，再用于查询用户外部数据或生成报告。
-const userId = ref(generateUserId()) // 当前会话用户 ID
+// 已登录时优先使用后端登录用户 ID；没有登录用户时才用随机 ID 做开发兜底。
+const userId = ref(props.currentUser?.user_id || generateUserId()) // 当前会话用户 ID
 const conversationId = ref<string | null>(null) // 当前后端会话 ID；首轮为空，由后端创建
 const health = ref<HealthResponse | null>(null) // 后端健康状态，初始为空
 
@@ -227,6 +229,18 @@ watch(
     }
   },
   { deep: true, immediate: true },
+)
+
+watch(
+  () => props.currentUser?.user_id,
+  (nextUserId) => {
+    if (!nextUserId || nextUserId === userId.value) return
+
+    userId.value = nextUserId
+    if (!conversationId.value) {
+      messages.value = [welcomeMessage(userId.value)]
+    }
+  },
 )
 
 watch(knowledgeKeyword, () => { // 知识库名称搜索变化时回到第一页
@@ -978,11 +992,11 @@ async function clearConversation() { // 清空当前对话
     stopGenerating() // 先停止生成，避免旧流继续写入
   }
 
-  userId.value = generateUserId(userId.value) // 换一个新的用户 ID
+  userId.value = props.currentUser?.user_id || generateUserId(userId.value) // 登录后保持真实用户 ID，未登录兜底才换随机 ID
   conversationId.value = null // 清空后让后端创建新 conversation_id
   messages.value = [welcomeMessage(userId.value)] // 重置消息列表，只保留欢迎语
   input.value = '' // 清空输入框
-  ElMessage.success(`已清空对话，新用户 ID：${userId.value}`) // 显示成功提示
+  ElMessage.success(`已清空对话，当前用户 ID：${userId.value}`) // 显示成功提示
   void scrollToBottom() // 滚动到底部；void 表示不用等待这个 Promise
 }
 

@@ -643,6 +643,97 @@ export interface TrainingStreamHandlers { // 训练 SSE 事件回调
 // - 本地开发：通过 .env.development 配成 http://127.0.0.1:8000，绕过 Vite 代理，减少流式缓冲干扰。
 // - Docker/Nginx 部署：使用默认 /api，由 Nginx 把 /api 转发给后端 api 容器。
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+export const AUTH_EXPIRED_EVENT = 'ai-rag-agent-auth-expired'
+let accessToken = ''
+
+export interface AuthUser { // 当前登录用户，来自后端 `/auth/me`
+  user_id: string
+  username: string
+  display_name: string
+  role: string
+  status: string
+}
+
+export interface LoginPayload { // 登录请求体
+  username: string
+  password: string
+}
+
+export interface LoginResponse { // 登录成功后的 token 和用户信息
+  access_token: string
+  token_type: string
+  expires_in: number
+  user: AuthUser
+}
+
+export function getAccessToken() { // access_token 只放在内存中，刷新页面后通过 refresh Cookie 恢复
+  return accessToken
+}
+
+export function setAccessToken(token: string) { // 保存新的内存 access_token
+  accessToken = token
+}
+
+export function clearAccessToken() { // 清理内存 access_token，退出或 refresh 失败时调用
+  accessToken = ''
+}
+
+function notifyAuthExpired() { // 通知 App.vue 登录态已失效，页面需要回到登录页
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+}
+
+function buildRequestHeaders(
+  headers?: HeadersInit,
+  includeJsonContentType = true,
+  includeAuthorization = true,
+) { // 合并默认请求头和内存 access_token
+  const finalHeaders = new Headers()
+  if (includeJsonContentType) {
+    finalHeaders.set('Content-Type', 'application/json')
+  }
+  if (headers) {
+    new Headers(headers).forEach((value, key) => finalHeaders.set(key, value))
+  }
+  const token = getAccessToken()
+  if (includeAuthorization && token) {
+    // Authorization 最后写入，避免 401 续签重试时被旧 token 覆盖。
+    finalHeaders.set('Authorization', `Bearer ${token}`)
+  }
+  return finalHeaders
+}
+
+async function fetchWithAuth(
+  path: string,
+  options?: RequestInit,
+  includeJsonContentType = true,
+  retryOnUnauthorized = true,
+): Promise<Response> { // 统一 fetch：携带 Cookie、Authorization，并在 401 时自动续签一次
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: buildRequestHeaders(options?.headers, includeJsonContentType),
+  })
+
+  if (
+    response.status !== 401
+    || !retryOnUnauthorized
+    || path.startsWith('/auth/login')
+    || path.startsWith('/auth/refresh')
+  ) {
+    return response
+  }
+
+  try {
+    await refreshAccessToken()
+  } catch {
+    clearAccessToken()
+    notifyAuthExpired()
+    return response
+  }
+
+  return fetchWithAuth(path, options, includeJsonContentType, false)
+}
 
 async function readErrorMessage(response: Response) { // 把后端错误响应转换成更适合页面展示的文字
   const text = await response.text() // 先读取原始错误文本
@@ -670,13 +761,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> { // 
   // 普通 JSON 请求封装。
   // `/health`、`/knowledge/reload`、`/chat` 都属于“请求完成后一次性解析 JSON”的接口。
   // 注意：这个函数会调用 response.json()，因此不能用于 `/chat/stream` 这种持续文本流接口。
-  const response = await fetch(`${API_BASE_URL}${path}`, { // 发起 HTTP 请求，最终地址 = API_BASE_URL + path
-    headers: { // 设置请求头
-      'Content-Type': 'application/json', // 告诉后端请求体是 JSON
-      ...options?.headers, // 合并调用方传入的额外请求头，调用方可以覆盖或扩展
-    },
-    ...options, // 合并 method、body、signal 等请求配置
-  })
+  const response = await fetchWithAuth(path, options) // 自动携带 JSON 头、Cookie 和 access_token
 
   if (!response.ok) { // HTTP 状态码不是 2xx 时进入错误处理
     // 后端返回非 2xx 时，优先读取原始文本，方便把 FastAPI 的错误信息展示出来。
@@ -686,6 +771,43 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> { // 
 
   // 一次性接口在这里等待完整响应体，然后整体反序列化成 JSON。
   return response.json() as Promise<T> // 把完整响应体解析成 JSON，并按 T 类型返回
+}
+
+export async function login(payload: LoginPayload) { // 调用后端登录接口并保存 token
+  const response = await request<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  setAccessToken(response.access_token)
+  return response
+}
+
+export async function refreshAccessToken() { // 使用 HttpOnly Cookie 续签新的 access_token
+  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: buildRequestHeaders(undefined, true, false),
+  })
+  if (!response.ok) {
+    const message = await readErrorMessage(response)
+    clearAccessToken()
+    throw new Error(message)
+  }
+  const data = await response.json() as LoginResponse
+  setAccessToken(data.access_token)
+  return data
+}
+
+export function fetchCurrentUser() { // 根据内存 access_token 查询当前登录用户
+  return request<AuthUser>('/auth/me')
+}
+
+export async function logoutCurrentUser() { // 通知后端删除 Redis refresh 会话并清除 Cookie
+  const response = await request<{ status: string }>('/auth/logout', {
+    method: 'POST',
+  })
+  clearAccessToken()
+  return response
 }
 
 export function fetchHealth() { // 获取后端和 Qdrant 健康状态
@@ -781,8 +903,11 @@ export function reloadKnowledge() { // 触发后端重新加载知识库到 Qdra
   })
 }
 
-export function listKnowledgeFiles() { // 获取知识库文件列表
-  return request<KnowledgeFileResponse[]>('/knowledge/files') // GET /knowledge/files
+export function listKnowledgeFiles(includeTraining = false) { // 获取知识库文件列表
+  const params = new URLSearchParams()
+  if (includeTraining) params.set('include_training', 'true')
+  const query = params.toString()
+  return request<KnowledgeFileResponse[]>(`/knowledge/files${query ? `?${query}` : ''}`) // GET /knowledge/files
 }
 
 export function previewKnowledgeDocument(documentId: string, maxChars = 30000) { // 预览已入库知识库文件
@@ -798,11 +923,11 @@ export async function previewKnowledgeFile(file: File, signal?: AbortSignal) { /
   const formData = new FormData() // 创建 multipart/form-data 请求体
   formData.append('file', file) // 后端 FastAPI 接口参数名是 file，因此这里也必须叫 file
 
-  const response = await fetch(`${API_BASE_URL}/knowledge/upload/preview`, { // 请求后端上传预览接口
+  const response = await fetchWithAuth('/knowledge/upload/preview', { // 请求后端上传预览接口
     method: 'POST', // 上传文件会创建/修改服务端资源，因此使用 POST
     body: formData, // 直接传 FormData，不经过 JSON.stringify
     signal, // 允许后续扩展取消上传
-  })
+  }, false)
 
   if (!response.ok) { // 上传失败时，把后端错误转成 Error
     const message = await readErrorMessage(response) // 读取 FastAPI 错误 detail
@@ -905,10 +1030,10 @@ export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPa
 
   // 注意这里不用通用 request()，因为通用 request() 默认发 JSON；
   // 文件上传必须让 fetch 直接携带 FormData。
-  const response = await fetch(`${API_BASE_URL}/training/knowledge/upload`, {
+  const response = await fetchWithAuth('/training/knowledge/upload', {
     method: 'POST',
     body: formData,
-  })
+  }, false)
 
   if (!response.ok) {
     const message = await readErrorMessage(response)
@@ -1069,13 +1194,12 @@ export async function submitTrainingTurnStream(
   handlers: TrainingStreamHandlers,
   signal?: AbortSignal,
 ) { // 流式提交学员回复，逐段接收 AI 客户话术
-  const response = await fetch(`${API_BASE_URL}/training/sessions/${encodeURIComponent(sessionId)}/turns?stream=true`, {
+  const response = await fetchWithAuth(`/training/sessions/${encodeURIComponent(sessionId)}/turns?stream=true`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+    headers: buildRequestHeaders({
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
-    },
+    }),
     body: JSON.stringify({ ...payload, response_mode: 'stream' }),
     signal,
   })
@@ -1178,15 +1302,14 @@ export async function sendChatStream(
   // - 返回值不是 JSON，而是 text/event-stream 文本流。
   // - fetch 拿到 response 后，通过 response.body.getReader() 一段段读取字节。
   // - 每解析出一个 SSE chunk，就调用 onChunk，把内容追加到当前助手消息。
-  const response = await fetch(`${API_BASE_URL}/chat/stream`, { // 请求后端 `/chat/stream` 流式接口
+  const response = await fetchWithAuth('/chat/stream', { // 请求后端 `/chat/stream` 流式接口
     method: 'POST', // 流式接口同样需要提交 JSON 请求体
-    headers: { // 设置流式请求头
-      'Content-Type': 'application/json', // 请求体格式是 JSON
+    headers: buildRequestHeaders({ // 设置流式请求头，并自动携带登录 token
       // 明确告诉后端和可能存在的代理层：客户端期望接收 SSE。
       Accept: 'text/event-stream', // 期望后端返回 SSE 文本流
       // 本地开发或代理场景下，避免缓存层把流式响应攒完整再交给浏览器。
       'Cache-Control': 'no-cache', // 告诉中间层不要缓存当前请求
-    },
+    }),
     body: JSON.stringify({
       message,
       user_id: userId,
