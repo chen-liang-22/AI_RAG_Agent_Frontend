@@ -5,15 +5,20 @@ import {
   ArrowLeft,
   Bot,
   Boxes,
+  BrainCircuit,
   ChevronRight,
   Clock3,
   DatabaseZap,
   Eye,
   FileText,
+  GraduationCap,
+  MessageSquareText,
   Pencil,
   RefreshCw,
   Search,
   ShieldCheck,
+  Sparkles,
+  Target,
   Trash2,
   Upload,
 } from 'lucide-vue-next'
@@ -25,19 +30,30 @@ import {
   deleteDictionaryGroup,
   deleteDictionaryItem,
   deleteKnowledgeFile,
+  deleteTrainingKnowledgeBatch,
   fetchHealth,
   getConversationDetail,
   listConversations,
   listDictionaries,
   listKnowledgeFiles,
+  listTrainingKnowledgeBatchVersions,
+  listTrainingKnowledgeBatches,
+  listTrainingKnowledgeChunks,
+  listTrainingPlans,
+  listTrainingSessions,
   previewKnowledgeDocument,
   previewKnowledgeFile,
+  previewTrainingKnowledgeBatch,
   recommendKnowledgeUpload,
   reindexAllKnowledgeFiles,
   reindexKnowledgeFile,
+  reparseTrainingKnowledgeBatch,
+  rollbackTrainingKnowledgeBatch,
   setDictionaryItemEnabled,
   updateDictionaryGroup,
   updateDictionaryItem,
+  uploadTrainingKnowledge,
+  publishTrainingKnowledgeBatch,
   type ConversationSummaryResponse,
   type DictionaryGroupResponse,
   type DictionaryItemResponse,
@@ -46,11 +62,20 @@ import {
   type KnowledgeFileResponse,
   type KnowledgeUploadPreviewResponse,
   type KnowledgeUploadRecommendResponse,
+  type TrainingKnowledgeBatchResponse,
+  type TrainingKnowledgeChunkResponse,
+  type TrainingKnowledgePreviewResponse,
+  type TrainingKnowledgeUploadResponse,
+  type TrainingPlanSummaryResponse,
+  type TrainingSessionSummaryResponse,
 } from '../api'
+import TrainingKnowledgeWorkspace from '../components/sales-training/TrainingKnowledgeWorkspace.vue'
+import { displayOptionLabel, safeList, valueList } from '../utils/trainingDisplay'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
 const emit = defineEmits<{
   openChatHistory: [conversationId: string]
+  openSalesTraining: []
 }>()
 
 interface DictionaryFormState { // 字典项编辑表单，字段和后端字典项保存接口一一对应
@@ -70,6 +95,16 @@ interface DictionaryGroupFormState { // 父级字典编辑表单，用于新增�
   dictionaryName: string
 }
 
+interface ChunkTypeSummary { // 训练资料切片按业务类型聚合后的前端展示结构
+  casePart: string
+  label: string
+  count: number
+  usageLabels: string[]
+  sampleText: string
+}
+
+type KnowledgeDialogTab = 'general' | 'salesTraining'
+
 const loading = ref(false) // 首页总览刷新状态
 const health = ref<HealthResponse | null>(null) // 后端健康检查结果
 const knowledgeFiles = ref<KnowledgeFileResponse[]>([]) // 后端知识库文件列表
@@ -77,6 +112,12 @@ const dictionaries = ref<DictionaryGroupResponse[]>([]) // 后端系统字典分
 const conversations = ref<ConversationSummaryResponse[]>([]) // 最近会话列表
 const conversationTotal = ref(0) // 会话总数
 const conversationTooltipMap = ref<Record<string, string>>({}) // 最近会话悬浮提示，优先展示完整用户问题
+const trainingBatches = ref<TrainingKnowledgeBatchResponse[]>([]) // 首页销售训练资料批次概览
+const trainingBatchTotal = ref(0) // 销售训练资料批次总数
+const trainingPlans = ref<TrainingPlanSummaryResponse[]>([]) // 首页销售训练方案概览
+const trainingPlanTotal = ref(0) // 销售训练方案总数
+const trainingSessions = ref<TrainingSessionSummaryResponse[]>([]) // 首页销售训练会话概览
+const trainingSessionTotal = ref(0) // 销售训练会话总数
 const overviewActiveCollection = ref('') // 首页知识库概览当前选中的向量库
 const overviewKnowledgePage = ref(1) // 首页知识库概览分页页码
 const overviewKnowledgePageSize = 6 // 首页知识库概览每页展示 6 条，兼顾信息量和一屏可读性
@@ -84,6 +125,7 @@ const overviewConversationPage = ref(1) // 首页最近会话分页页码
 const overviewConversationPageSize = 6 // 首页最近会话每页展示 6 条
 
 const knowledgeDialogVisible = ref(false) // 知识库管理弹窗开关
+const knowledgeDialogTab = ref<KnowledgeDialogTab>('general') // 知识库弹窗一级页签：通用知识库 / 销售训练资料
 const knowledgeLoading = ref(false) // 知识库文件列表加载状态
 const knowledgeKeyword = ref('') // 知识库文件名搜索关键词
 const knowledgeFileInput = ref<HTMLInputElement | null>(null) // 隐藏文件选择框
@@ -104,6 +146,31 @@ const selectedUploadCollection = ref('agent') // 上传文件写入的 collectio
 const knowledgePreviewVisible = ref(false) // 文件预览弹窗开关
 const knowledgePreviewLoading = ref(false) // 文件预览加载状态
 const knowledgePreview = ref<KnowledgeFilePreviewResponse | null>(null) // 文件预览内容
+const trainingKnowledgeSelectedFile = ref<File | null>(null) // 首页弹窗中选中的销售训练资料文件
+const trainingKnowledgeSourceType = ref('lms_case') // 训练资料来源类型；一期默认 LMS 案例
+const trainingKnowledgeModelMode = ref('high') // 训练资料 LLM 兜底切分使用的模型档位
+const trainingKnowledgeUploadResult = ref<TrainingKnowledgeUploadResponse | null>(null) // 训练资料上传预览结果
+const trainingKnowledgeChunks = ref<TrainingKnowledgeChunkResponse[]>([]) // 当前训练资料批次的切片列表
+const trainingKnowledgeBatches = ref<TrainingKnowledgeBatchResponse[]>([]) // 知识库弹窗内的训练资料批次列表
+const trainingKnowledgeBatchTotal = ref(0) // 知识库弹窗内训练资料批次总数
+const trainingKnowledgeBatchPage = ref(1) // 知识库弹窗内训练资料分页页码
+const activeTrainingKnowledgeBatchId = ref('') // 当前正在查看切片的训练资料批次
+const trainingKnowledgeLoadingBatches = ref(false) // 训练资料批次列表加载状态
+const trainingKnowledgeLoadingChunks = ref(false) // 训练资料切片加载状态
+const trainingKnowledgePreview = ref<TrainingKnowledgePreviewResponse | null>(null) // 训练资料原文件预览
+const trainingKnowledgePreviewVisible = ref(false) // 训练资料预览弹窗开关
+const trainingKnowledgeVersionDialogVisible = ref(false) // 训练资料版本链弹窗开关
+const trainingKnowledgeVersionLoading = ref(false) // 训练资料版本链加载状态
+const trainingKnowledgeBatchVersions = ref<TrainingKnowledgeBatchResponse[]>([]) // 同一份训练资料的历史版本列表
+const activeTrainingKnowledgeVersionGroupId = ref('') // 当前版本组 ID
+const activeTrainingKnowledgeChunkSummary = ref<ChunkTypeSummary | null>(null) // 当前打开的切片类型详情
+const trainingKnowledgeChunkDetailVisible = ref(false) // 切片详情弹窗开关
+const trainingKnowledgeUploading = ref(false) // 训练资料上传状态
+const trainingKnowledgePublishingBatchId = ref('') // 正在发布的训练资料批次 ID
+const trainingKnowledgeRollingBackBatchId = ref('') // 正在回滚的训练资料批次 ID
+const trainingKnowledgeReparsingBatchId = ref('') // 正在 LLM 重切的训练资料批次 ID
+const trainingKnowledgePreviewingBatchId = ref('') // 正在预览原文件的训练资料批次 ID
+const trainingKnowledgeDeletingBatchId = ref('') // 正在删除的训练资料批次 ID
 
 const dictionaryDialogVisible = ref(false) // 字典表管理弹窗开关
 const dictionaryLoading = ref(false) // 字典表加载状态
@@ -138,6 +205,80 @@ const collectionCount = computed(() => new Set([...(health.value?.collections ||
 const totalVectorPointCount = computed(() => Object.values(health.value?.collection_points || {}).reduce((total, count) => total + Number(count || 0), 0))
 const dictionaryItemCount = computed(() => dictionaries.value.reduce((total, group) => total + countItems(group.items), 0))
 const latestConversation = computed(() => conversations.value[0])
+const trainingPublishedBatchCount = computed(() => trainingBatches.value.filter((item) => trainingStatusKind(item.status) === 'published').length)
+const trainingPendingBatchCount = computed(() => trainingBatches.value.filter((item) => trainingStatusKind(item.status) === 'pending').length)
+const trainingFailedBatchCount = computed(() => trainingBatches.value.filter((item) => trainingStatusKind(item.status) === 'failed').length)
+const trainingPlanReadyCount = computed(() => trainingPlans.value.filter((item) => item.active_profile_id && item.active_setting_id).length)
+const trainingPlanStaleCount = computed(() => trainingPlans.value.filter((item) => [item.role_status, item.goal_status, item.score_status].includes('stale')).length)
+const trainingActiveSessionCount = computed(() => trainingSessions.value.filter((item) => item.status === 'active').length)
+const trainingScoringSessionCount = computed(() => trainingSessions.value.filter((item) => item.status === 'scoring').length)
+const trainingCompletedSessionCount = computed(() => trainingSessions.value.filter((item) => item.status === 'completed').length)
+const trainingVectorPoints = computed(() => Number(health.value?.collection_points?.sales_training_cases || 0))
+const trainingStagingVectorPoints = computed(() => Number(health.value?.collection_points?.sales_training_cases_staging || 0))
+const latestTrainingSession = computed(() => trainingSessions.value[0])
+const latestTrainingPlan = computed(() => trainingPlans.value[0])
+const currentTrainingKnowledgeChunkCount = computed(() => trainingKnowledgeUploadResult.value?.chunk_count ?? 0)
+const currentTrainingKnowledgePointCount = computed(() => trainingKnowledgeUploadResult.value?.point_count ?? 0)
+const currentTrainingKnowledgeStatus = computed(() => trainingKnowledgeBatchStatusLabel(trainingKnowledgeUploadResult.value?.status || 'waiting'))
+const currentTrainingKnowledgeDuplicateText = computed(() => trainingKnowledgeUploadResult.value?.duplicate_of ? '已复用' : '未重复')
+const canClearTrainingKnowledgeUploadArea = computed(() => Boolean(trainingKnowledgeSelectedFile.value || trainingKnowledgeUploadResult.value))
+const trainingKnowledgeUploadQualityReport = computed(() => trainingKnowledgeUploadResult.value?.quality_report || {})
+const trainingKnowledgeUploadQualityWarnings = computed(() => safeList(trainingKnowledgeUploadQualityReport.value.warnings))
+const trainingKnowledgeUploadQualityMetrics = computed(() => (trainingKnowledgeUploadQualityReport.value.metrics || {}) as Record<string, unknown>)
+const trainingKnowledgeUploadQualitySplitText = computed(() => {
+  const splitter = String(trainingKnowledgeUploadQualityReport.value.selected_splitter || '')
+  if (splitter === 'llm_fallback') return 'LLM 兜底切分'
+  if (trainingKnowledgeUploadQualityReport.value.llm_fallback_attempted) return '规则切分，已尝试 LLM 兜底'
+  return '规则配置切分'
+})
+const trainingKnowledgeUploadPublishValidation = computed(() => (
+  trainingKnowledgeUploadQualityReport.value.publish_validation || null
+) as Record<string, unknown> | null)
+const selectedTrainingKnowledgeSourceTypeItem = computed(() => (
+  dictionaryItems('training_source_type').find((item) => item.enabled && item.item_code === trainingKnowledgeSourceType.value) || null
+))
+const trainingKnowledgeUploadHelpDescription = computed(() => {
+  const item = selectedTrainingKnowledgeSourceTypeItem.value
+  if (!item) return '一期上传只做文件入库，画像、行业、难度和评分规则不在上传阶段配置。当前按 LMS 销售训练案例做专门结构化拆分。'
+  const strategy = String(item.metadata?.strategy || '')
+  const sourceDetail = [item.description, strategy ? `策略：${strategy}` : ''].filter(Boolean).join(' · ')
+  return `一期上传只做文件入库，画像、行业、难度和评分规则不在上传阶段配置。${sourceDetail}`
+})
+const trainingKnowledgeChunkTypeSummaries = computed<ChunkTypeSummary[]>(() => {
+  const summaryMap = new Map<string, ChunkTypeSummary>()
+  for (const chunk of trainingKnowledgeChunks.value) {
+    const label = trainingKnowledgeCasePartLabel(chunk.case_part)
+    const usageLabel = trainingKnowledgeChunkUsageLabel(chunk.visibility)
+    const current = summaryMap.get(chunk.case_part)
+    if (current) {
+      current.count += 1
+      if (!current.usageLabels.includes(usageLabel)) {
+        current.usageLabels.push(usageLabel)
+      }
+      continue
+    }
+    summaryMap.set(chunk.case_part, {
+      casePart: chunk.case_part,
+      label,
+      count: 1,
+      usageLabels: [usageLabel],
+      sampleText: chunk.chunk_text,
+    })
+  }
+  return Array.from(summaryMap.values())
+})
+const activeTrainingKnowledgeChunkTypeChunks = computed(() => {
+  const summary = activeTrainingKnowledgeChunkSummary.value
+  if (!summary) return []
+  return trainingKnowledgeChunks.value.filter((chunk) => chunk.case_part === summary.casePart)
+})
+
+const salesTrainingStats = computed(() => [
+  { label: '训练资料', value: trainingBatchTotal.value, detail: `${trainingPublishedBatchCount.value} 已发布 / ${trainingPendingBatchCount.value} 待处理`, icon: DatabaseZap, tone: 'cyan' },
+  { label: '陪练方案', value: trainingPlanTotal.value, detail: `${trainingPlanReadyCount.value} 已就绪 / ${trainingPlanStaleCount.value} 待重生成`, icon: Target, tone: 'violet' },
+  { label: '训练会话', value: trainingSessionTotal.value, detail: `${trainingActiveSessionCount.value} 进行中 / ${trainingScoringSessionCount.value} 待评分`, icon: MessageSquareText, tone: 'amber' },
+  { label: '正式向量', value: trainingVectorPoints.value, detail: `临时预览 ${trainingStagingVectorPoints.value} 点`, icon: BrainCircuit, tone: 'blue' },
+])
 
 const cockpitCards = computed(() => [
   { title: '服务健康', value: serviceStatusLabel(health.value?.status), detail: `Qdrant ${serviceStatusLabel(health.value?.qdrant)}`, icon: ShieldCheck, tone: health.value?.status === 'ok' ? 'good' : 'warn' },
@@ -145,6 +286,24 @@ const cockpitCards = computed(() => [
   { title: '多库航道', value: collectionCount.value || 0, detail: '可用知识库 Collection', icon: Boxes, tone: 'cyan' },
   { title: '字典引擎', value: dictionaries.value.length, detail: `${dictionaryItemCount.value} 个字典项`, icon: FileText, tone: 'violet' },
   { title: '会话星轨', value: conversationTotal.value, detail: latestConversation.value?.title || '暂无最近会话', icon: Clock3, tone: 'amber' },
+])
+
+const trainingTimeline = computed(() => [
+  {
+    title: '资料准备',
+    detail: trainingPublishedBatchCount.value > 0 ? `${trainingPublishedBatchCount.value} 批资料可用于生成客户角色` : '还没有已发布训练资料',
+    status: trainingPublishedBatchCount.value > 0 ? 'ready' : 'todo',
+  },
+  {
+    title: '角色方案',
+    detail: latestTrainingPlan.value ? `${latestTrainingPlan.value.plan_name} · ${latestTrainingPlan.value.trainee_name}` : '等待创建训练方案',
+    status: trainingPlanReadyCount.value > 0 ? 'ready' : 'todo',
+  },
+  {
+    title: '实战会话',
+    detail: latestTrainingSession.value ? `${trainingSessionLabel(latestTrainingSession.value.status)} · ${latestTrainingSession.value.answered_count}/${latestTrainingSession.value.round_limit} 轮` : '暂无训练会话',
+    status: trainingActiveSessionCount.value > 0 ? 'active' : trainingCompletedSessionCount.value > 0 ? 'ready' : 'todo',
+  },
 ])
 
 const collectionOptions = computed(() => { // 汇总健康检查和文件列表中的 collection，供上传与页签共用
@@ -301,6 +460,132 @@ function serviceStatusLabel(status?: string) { // 把服务状态编码转换成
   return '未知'
 }
 
+function trainingStatusKind(status: string) { // 把训练资料批次状态归类成首页容易读懂的状态组
+  if (['published', 'indexed', 'active'].includes(status)) return 'published'
+  if (['parsing', 'parsed', 'pending_review', 'reviewing', 'staged'].includes(status)) return 'pending'
+  if (['parsing_failed', 'failed', 'rejected'].includes(status)) return 'failed'
+  return 'other'
+}
+
+function trainingBatchLabel(status: string) { // 训练资料状态中文文案
+  if (trainingStatusKind(status) === 'published') return '已发布'
+  if (trainingStatusKind(status) === 'pending') return '待处理'
+  if (trainingStatusKind(status) === 'failed') return '异常'
+  return status || '未知'
+}
+
+function trainingSessionLabel(status: string) { // 训练会话状态中文文案
+  if (status === 'active') return '进行中'
+  if (status === 'scoring') return '待评分'
+  if (status === 'completed') return '已完成'
+  return status || '未知'
+}
+
+function dictionaryItemLabel(items: DictionaryItemResponse[], code: string, fallbackLabels: Record<string, string>) {
+  const item = items.find((option) => option.item_code === code)
+  return item?.item_name || fallbackLabels[code] || code
+}
+
+function dictionaryItemDescription(items: DictionaryItemResponse[], code: string) {
+  return items.find((option) => option.item_code === code)?.description || ''
+}
+
+function trainingKnowledgeCasePartLabel(code: string) {
+  return dictionaryItemLabel(dictionaryItems('training_case_part'), code, {
+    case_profile: '客户背景',
+    task_requirement: '训练任务',
+    standard_answer: '参考话术',
+    hidden_psychology: '客户顾虑',
+    scoring_rubric: '评分依据',
+    product_fact: '产品事实',
+    faq: '常见问答',
+    competitor: '竞品信息',
+    success_case: '成功案例',
+    glossary: '术语说明',
+  })
+}
+
+function trainingKnowledgeChunkUsageLabel(code: string) {
+  return dictionaryItemLabel(dictionaryItems('training_chunk_usage'), code, {
+    visible: '通用知识',
+    hidden: '客户内部顾虑',
+    scoring_only: '评分专用',
+  })
+}
+
+function trainingKnowledgeBatchStatusLabel(code: string) {
+  return dictionaryItemLabel([], code, {
+    waiting: '等待上传',
+    parsing: '解析中',
+    pending_review: '待确认',
+    embedding: '发布中',
+    published: '已发布',
+    archived: '历史版本',
+    parsing_failed: '解析失败',
+    publish_failed: '发布失败',
+    deleted: '已删除',
+    duplicated: '重复复用',
+  })
+}
+
+function trainingKnowledgeQualityLevelLabel(level: unknown) {
+  return displayOptionLabel(String(level || ''), {
+    good: '质量较好',
+    review: '建议复核',
+    poor: '质量较低',
+  })
+}
+
+function trainingKnowledgeQualityLevelClass(level: unknown) {
+  const value = String(level || '')
+  if (value === 'good') return 'good'
+  if (value === 'poor') return 'poor'
+  return 'review'
+}
+
+function trainingKnowledgeChunkSummaryTitle(summary: ChunkTypeSummary) {
+  const partDescription = dictionaryItemDescription(dictionaryItems('training_case_part'), summary.casePart)
+  return [
+    `切片类型编码：${summary.casePart}`,
+    partDescription && `类型说明：${partDescription}`,
+    `包含分片：${summary.count} 条`,
+    `模型用途：${summary.usageLabels.join('、')}`,
+  ].filter(Boolean).join('\n')
+}
+
+function openTrainingKnowledgeChunkSummary(summary: ChunkTypeSummary) {
+  activeTrainingKnowledgeChunkSummary.value = summary
+  trainingKnowledgeChunkDetailVisible.value = true
+}
+
+function trainingKnowledgeChunkDetailMeta(chunk: TrainingKnowledgeChunkResponse, index: number) {
+  const metadata = chunk.metadata || {}
+  const pageNumbers = valueList(metadata.page_numbers).join('、')
+  const headingLevels = valueList(metadata.heading_levels).join('、')
+  const outlineTitles = valueList(metadata.outline_titles).join(' / ')
+  const splitter = String(metadata.splitter || '').trim()
+  const blockRange = [metadata.start_block_index, metadata.end_block_index]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join('-')
+  return [
+    `第 ${index + 1} 条`,
+    `用途：${trainingKnowledgeChunkUsageLabel(chunk.visibility)}`,
+    metadata.source_file ? `来源：${metadata.source_file}` : '',
+    metadata.task_id ? `任务：${metadata.task_id}` : '',
+    metadata.section_title ? `标题：${metadata.section_title}` : '',
+    pageNumbers ? `页码：${pageNumbers}` : '',
+    blockRange ? `段落：${blockRange}` : '',
+    headingLevels ? `标题级别：${headingLevels}` : '',
+    outlineTitles ? `目录：${outlineTitles}` : '',
+    splitter ? `切分：${splitter}` : '',
+  ].filter(Boolean).join(' · ')
+}
+
+function openSalesTraining() { // 从首页驾驶舱跳到销售陪练主页面
+  emit('openSalesTraining')
+}
+
 function knowledgeStatusType(status: string) { // 把知识库文件状态转换成 Element Plus 标签类型
   const item = dictionaryItems('document_status').find((option) => option.item_code === status)
   return String(item?.metadata?.tag_type || 'info')
@@ -373,11 +658,22 @@ async function confirmDangerOnce(message: string, title: string, confirmButtonTe
 async function refreshDashboard() { // 刷新首页所有总览数据
   loading.value = true
   // 首页只做总览展示，单个接口变慢或失败时不应该阻塞整页渲染。
-  const [healthResult, filesResult, dictionaryResult, conversationResult] = await Promise.allSettled([
+  const [
+    healthResult,
+    filesResult,
+    dictionaryResult,
+    conversationResult,
+    trainingBatchResult,
+    trainingPlanResult,
+    trainingSessionResult,
+  ] = await Promise.allSettled([
     fetchHealth(),
     listKnowledgeFiles(),
     listDictionaries(),
     listConversations(1, 30),
+    listTrainingKnowledgeBatches(1, 8),
+    listTrainingPlans(1, 8),
+    listTrainingSessions(1, 8),
   ])
 
   try {
@@ -397,8 +693,28 @@ async function refreshDashboard() { // 刷新首页所有总览数据
       conversations.value = conversationResult.value.items
       conversationTotal.value = conversationResult.value.total
     }
+    if (trainingBatchResult.status === 'fulfilled') {
+      trainingBatches.value = trainingBatchResult.value.items
+      trainingBatchTotal.value = trainingBatchResult.value.total
+    }
+    if (trainingPlanResult.status === 'fulfilled') {
+      trainingPlans.value = trainingPlanResult.value.items
+      trainingPlanTotal.value = trainingPlanResult.value.total
+    }
+    if (trainingSessionResult.status === 'fulfilled') {
+      trainingSessions.value = trainingSessionResult.value.items
+      trainingSessionTotal.value = trainingSessionResult.value.total
+    }
 
-    const failedCount = [healthResult, filesResult, dictionaryResult, conversationResult]
+    const failedCount = [
+      healthResult,
+      filesResult,
+      dictionaryResult,
+      conversationResult,
+      trainingBatchResult,
+      trainingPlanResult,
+      trainingSessionResult,
+    ]
       .filter((result) => result.status === 'rejected')
       .length
     if (failedCount > 0) {
@@ -451,9 +767,18 @@ async function refreshHealth() { // 刷新后端健康检查
   }
 }
 
-async function openKnowledgeDialog() { // 打开知识库管理弹窗
+async function openKnowledgeDialog(tab: KnowledgeDialogTab = 'general') { // 打开知识库管理弹窗，可直接定位到通用知识库或销售训练资料
+  knowledgeDialogTab.value = tab
   knowledgeDialogVisible.value = true
+  if (tab === 'salesTraining') {
+    await refreshTrainingKnowledgeBatches()
+    return
+  }
   await refreshKnowledgeFiles()
+}
+
+async function openTrainingKnowledgeDialog() { // 从销售训练驾驶舱直接进入训练资料管理页签
+  await openKnowledgeDialog('salesTraining')
 }
 
 async function openDictionaryDialog() { // 打开字典表管理弹窗
@@ -487,6 +812,249 @@ async function handleKnowledgeFileChange(event: Event) { // 选择文件后先�
   } finally {
     uploadingKnowledge.value = false
     target.value = ''
+  }
+}
+
+function onTrainingKnowledgeFileChange(file: File | undefined) {
+  trainingKnowledgeSelectedFile.value = file || null
+  trainingKnowledgeUploadResult.value = null
+}
+
+function clearTrainingKnowledgeUploadArea() {
+  trainingKnowledgeSelectedFile.value = null
+  trainingKnowledgeUploadResult.value = null
+}
+
+async function uploadTrainingKnowledgeFile() {
+  if (!trainingKnowledgeSelectedFile.value) {
+    ElMessage.warning('请先选择 LMS 案例文件')
+    return
+  }
+
+  trainingKnowledgeUploading.value = true
+  try {
+    trainingKnowledgeUploadResult.value = await uploadTrainingKnowledge({
+      file: trainingKnowledgeSelectedFile.value,
+      sourceType: trainingKnowledgeSourceType.value,
+      modelMode: trainingKnowledgeModelMode.value,
+    })
+    const response = await listTrainingKnowledgeChunks(trainingKnowledgeUploadResult.value.batch_id)
+    trainingKnowledgeChunks.value = response.chunks
+    activeTrainingKnowledgeBatchId.value = trainingKnowledgeUploadResult.value.batch_id
+    await refreshTrainingKnowledgeBatches()
+    await refreshTrainingDashboardSummary()
+    ElMessage.success(trainingKnowledgeUploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练资料预览已生成，请确认后发布')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练知识上传失败')
+  } finally {
+    trainingKnowledgeUploading.value = false
+  }
+}
+
+async function publishTrainingKnowledgeFileBatch(batchId: string) {
+  trainingKnowledgePublishingBatchId.value = batchId
+  try {
+    const result = await publishTrainingKnowledgeBatch(batchId)
+    if (trainingKnowledgeUploadResult.value?.batch_id === batchId) {
+      trainingKnowledgeUploadResult.value = {
+        ...trainingKnowledgeUploadResult.value,
+        status: result.status,
+        chunk_count: result.chunk_count,
+        point_count: result.point_count,
+        quality_report: result.quality_report,
+      }
+    }
+    await refreshTrainingKnowledgeBatches()
+    const response = await listTrainingKnowledgeChunks(batchId)
+    trainingKnowledgeChunks.value = response.chunks
+    activeTrainingKnowledgeBatchId.value = batchId
+    if (trainingKnowledgeVersionDialogVisible.value) {
+      await loadTrainingKnowledgeBatchVersions(batchId)
+    }
+    await refreshTrainingDashboardSummary()
+    ElMessage.success('训练资料已发布并写入向量库')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料发布失败')
+  } finally {
+    trainingKnowledgePublishingBatchId.value = ''
+  }
+}
+
+async function rollbackTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchResponse) {
+  const confirmed = await confirmDangerOnce(
+    `确定回滚到「${batch.source_file}」的 V${batch.version_no || 1} 吗？当前版本会变成历史版本。`,
+    '回滚训练资料版本',
+    '确认回滚',
+  )
+  if (!confirmed) return
+
+  trainingKnowledgeRollingBackBatchId.value = batch.batch_id
+  try {
+    const result = await rollbackTrainingKnowledgeBatch(batch.batch_id)
+    if (trainingKnowledgeUploadResult.value?.batch_id === batch.batch_id) {
+      trainingKnowledgeUploadResult.value = {
+        ...trainingKnowledgeUploadResult.value,
+        status: result.status,
+        chunk_count: result.chunk_count,
+        point_count: result.point_count,
+        quality_report: result.quality_report,
+      }
+    }
+    await refreshTrainingKnowledgeBatches()
+    const response = await listTrainingKnowledgeChunks(batch.batch_id)
+    trainingKnowledgeChunks.value = response.chunks
+    activeTrainingKnowledgeBatchId.value = batch.batch_id
+    if (trainingKnowledgeVersionDialogVisible.value) {
+      await loadTrainingKnowledgeBatchVersions(batch.batch_id)
+    }
+    await refreshTrainingDashboardSummary()
+    ElMessage.success(`已回滚到 V${result.version_no}`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料回滚失败')
+  } finally {
+    trainingKnowledgeRollingBackBatchId.value = ''
+  }
+}
+
+async function reparseTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchResponse | string) {
+  const batchId = typeof batch === 'string' ? batch : batch.batch_id
+  const sourceFile = typeof batch === 'string' ? trainingKnowledgeUploadResult.value?.source_file || '当前资料' : batch.source_file
+  const confirmed = await confirmDangerOnce(
+    `确定使用 LLM 重新切分「${sourceFile}」吗？重切后需要再次人工确认发布。`,
+    'LLM 重新切分',
+    '确认重切',
+  )
+  if (!confirmed) return
+
+  trainingKnowledgeReparsingBatchId.value = batchId
+  try {
+    const result = await reparseTrainingKnowledgeBatch(batchId, true, trainingKnowledgeModelMode.value)
+    if (trainingKnowledgeUploadResult.value?.batch_id === batchId) {
+      trainingKnowledgeUploadResult.value = {
+        ...trainingKnowledgeUploadResult.value,
+        status: result.status,
+        chunk_count: result.chunk_count,
+        point_count: result.point_count,
+        source_file: result.source_file ?? trainingKnowledgeUploadResult.value.source_file,
+        quality_report: result.quality_report,
+      }
+    }
+    await refreshTrainingKnowledgeBatches()
+    const response = await listTrainingKnowledgeChunks(batchId)
+    trainingKnowledgeChunks.value = response.chunks
+    activeTrainingKnowledgeBatchId.value = batchId
+    if (trainingKnowledgeVersionDialogVisible.value) {
+      await loadTrainingKnowledgeBatchVersions(batchId)
+    }
+    await refreshTrainingDashboardSummary()
+    ElMessage.success('LLM 重新切分完成，请检查切片后再发布')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料重新切分失败')
+  } finally {
+    trainingKnowledgeReparsingBatchId.value = ''
+  }
+}
+
+async function loadTrainingKnowledgeBatchVersions(batchId: string) {
+  trainingKnowledgeVersionLoading.value = true
+  try {
+    const response = await listTrainingKnowledgeBatchVersions(batchId)
+    activeTrainingKnowledgeVersionGroupId.value = response.version_group_id
+    trainingKnowledgeBatchVersions.value = response.items
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料版本链读取失败')
+  } finally {
+    trainingKnowledgeVersionLoading.value = false
+  }
+}
+
+async function openTrainingKnowledgeBatchVersions(batch: TrainingKnowledgeBatchResponse) {
+  trainingKnowledgeVersionDialogVisible.value = true
+  await loadTrainingKnowledgeBatchVersions(batch.batch_id)
+}
+
+async function refreshTrainingKnowledgeBatches() {
+  trainingKnowledgeLoadingBatches.value = true
+  try {
+    const response = await listTrainingKnowledgeBatches(trainingKnowledgeBatchPage.value, 6)
+    if (response.items.length === 0 && response.total > 0 && trainingKnowledgeBatchPage.value > 1) {
+      trainingKnowledgeBatchPage.value -= 1
+      await refreshTrainingKnowledgeBatches()
+      return
+    }
+    trainingKnowledgeBatches.value = response.items
+    trainingKnowledgeBatchTotal.value = response.total
+    if (!activeTrainingKnowledgeBatchId.value && response.items.length) {
+      await openTrainingKnowledgeBatch(response.items[0])
+    }
+  } catch (error) {
+    ElMessage.warning(error instanceof Error ? error.message : '训练资料列表读取失败')
+  } finally {
+    trainingKnowledgeLoadingBatches.value = false
+  }
+}
+
+async function openTrainingKnowledgeBatch(batch: TrainingKnowledgeBatchResponse) {
+  activeTrainingKnowledgeBatchId.value = batch.batch_id
+  trainingKnowledgeLoadingChunks.value = true
+  try {
+    const response = await listTrainingKnowledgeChunks(batch.batch_id)
+    trainingKnowledgeChunks.value = response.chunks
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料切片读取失败')
+  } finally {
+    trainingKnowledgeLoadingChunks.value = false
+  }
+}
+
+async function previewTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchResponse) {
+  trainingKnowledgePreviewingBatchId.value = batch.batch_id
+  try {
+    trainingKnowledgePreview.value = await previewTrainingKnowledgeBatch(batch.batch_id)
+    trainingKnowledgePreviewVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料预览失败')
+  } finally {
+    trainingKnowledgePreviewingBatchId.value = ''
+  }
+}
+
+async function deleteTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchResponse) {
+  const confirmed = await confirmDangerOnce(
+    `确定删除训练资料「${batch.source_file}」吗？删除后会移除对应向量点。`,
+    '删除训练资料',
+    '确认删除',
+  )
+  if (!confirmed) return
+
+  trainingKnowledgeDeletingBatchId.value = batch.batch_id
+  try {
+    await deleteTrainingKnowledgeBatch(batch.batch_id)
+    ElMessage.success('训练资料已删除')
+    if (activeTrainingKnowledgeBatchId.value === batch.batch_id) {
+      activeTrainingKnowledgeBatchId.value = ''
+      trainingKnowledgeChunks.value = []
+    }
+    await refreshTrainingKnowledgeBatches()
+    await refreshTrainingDashboardSummary()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练资料删除失败')
+  } finally {
+    trainingKnowledgeDeletingBatchId.value = ''
+  }
+}
+
+async function refreshTrainingDashboardSummary() {
+  const [batchResult, healthResult] = await Promise.allSettled([
+    listTrainingKnowledgeBatches(1, 8),
+    fetchHealth(),
+  ])
+  if (batchResult.status === 'fulfilled') {
+    trainingBatches.value = batchResult.value.items
+    trainingBatchTotal.value = batchResult.value.total
+  }
+  if (healthResult.status === 'fulfilled') {
+    health.value = healthResult.value
   }
 }
 
@@ -858,6 +1426,95 @@ onMounted(() => {
       </article>
     </section>
 
+    <section class="sales-cockpit">
+      <div class="sales-cockpit-main">
+        <div class="sales-cockpit-heading">
+          <span class="page-kicker"><BrainCircuit :size="16" /> AI销售训练驾驶舱</span>
+          <h3>从训练资料到实战复盘的销售能力闭环</h3>
+          <p>聚合训练资料、AI 客户方案、对话会话和评分状态，首页只展示运行态势，具体配置进入销售陪练模块处理。</p>
+        </div>
+        <div class="sales-cockpit-actions">
+          <el-button class="tech-button primary" :icon="Sparkles" @click="openSalesTraining">进入销售陪练</el-button>
+          <el-button class="tech-button" :icon="Upload" @click="openTrainingKnowledgeDialog">上传训练资料</el-button>
+          <el-button class="tech-button" :icon="RefreshCw" :loading="loading" @click="refreshDashboard">刷新训练态势</el-button>
+        </div>
+      </div>
+
+      <div class="sales-stat-grid">
+        <article v-for="item in salesTrainingStats" :key="item.label" class="sales-stat-card" :class="`tone-${item.tone}`">
+          <span><component :is="item.icon" :size="19" /></span>
+          <div>
+            <strong>{{ item.value }}</strong>
+            <em>{{ item.label }}</em>
+            <p>{{ item.detail }}</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="sales-cockpit-lower">
+        <div class="sales-flow-panel">
+          <div class="panel-title panel-title-between">
+            <span><Target :size="18" />训练链路</span>
+            <em>{{ trainingFailedBatchCount }} 个异常批次</em>
+          </div>
+          <div class="sales-flow-steps">
+            <article v-for="step in trainingTimeline" :key="step.title" :class="`status-${step.status}`">
+              <span></span>
+              <div>
+                <strong>{{ step.title }}</strong>
+                <p>{{ step.detail }}</p>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="sales-recent-panel">
+          <div class="panel-title panel-title-between">
+            <span><GraduationCap :size="18" />最近训练</span>
+            <em>{{ trainingSessionTotal }} 条记录</em>
+          </div>
+          <div class="sales-recent-list">
+            <button
+              v-for="session in trainingSessions.slice(0, 4)"
+              :key="session.session_id"
+              type="button"
+              @click="openSalesTraining"
+            >
+              <span>
+                <strong>{{ trainingSessionLabel(session.status) }}</strong>
+                <em>{{ session.answered_count }}/{{ session.round_limit }} 轮 · {{ session.response_mode === 'stream' ? '流式' : '一次性' }}</em>
+              </span>
+              <b v-if="session.total_score !== null && session.total_score !== undefined">{{ session.total_score }}</b>
+              <ChevronRight v-else :size="17" />
+            </button>
+            <p v-if="trainingSessions.length === 0">暂无训练会话</p>
+          </div>
+        </div>
+
+        <div class="sales-recent-panel">
+          <div class="panel-title panel-title-between">
+            <span><DatabaseZap :size="18" />训练资料</span>
+            <em>{{ trainingBatchTotal }} 个批次</em>
+          </div>
+          <div class="sales-batch-list">
+            <button
+              v-for="batch in trainingBatches.slice(0, 4)"
+              :key="batch.batch_id"
+              type="button"
+              @click="openSalesTraining"
+            >
+              <span>
+                <strong>{{ batch.source_file }}</strong>
+                <em>v{{ batch.version_no }} · {{ trainingBatchLabel(batch.status) }} · {{ batch.chunk_count }} 切片</em>
+              </span>
+              <ChevronRight :size="17" />
+            </button>
+            <p v-if="trainingBatches.length === 0">暂无训练资料</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="dashboard-panels">
       <article class="dashboard-panel">
         <div class="panel-title panel-title-between">
@@ -957,106 +1614,195 @@ onMounted(() => {
       width="1180px"
       class="knowledge-dialog"
     >
-      <div class="dialog-toolbar">
-        <div class="dialog-toolbar-main">
-          <div>
-            <strong>{{ filteredKnowledgeFiles.length }}</strong>
-            <span>个文件</span>
-            <em>{{ activeIndexedKnowledgeCount }} 个已索引</em>
-          </div>
-          <el-input
-            v-model="knowledgeKeyword"
-            class="dialog-search-input"
-            clearable
-            :prefix-icon="Search"
-            placeholder="按文件名模糊查询"
-          />
-        </div>
-        <div class="dialog-actions">
-          <el-button :icon="Upload" :loading="uploadingKnowledge" type="primary" @click="openKnowledgeFilePicker">
-            上传文件
-          </el-button>
-          <el-button :icon="RefreshCw" :loading="knowledgeLoading" @click="refreshKnowledgeFiles">
-            刷新
-          </el-button>
-          <el-button :icon="RefreshCw" :loading="reindexingAll" type="warning" plain @click="handleReindexAllKnowledgeFiles">
-            清空并重建
-          </el-button>
-        </div>
-      </div>
-
-      <div class="knowledge-collection-tabs" role="tablist" aria-label="知识库列表">
+      <div class="knowledge-mode-tabs" role="tablist" aria-label="知识库管理类型">
         <button
-          v-for="tab in knowledgeCollectionTabs"
-          :key="tab.collectionName"
           type="button"
-          class="knowledge-collection-tab"
-          :class="{ active: activeKnowledgeCollection === tab.collectionName }"
+          class="knowledge-mode-tab"
+          :class="{ active: knowledgeDialogTab === 'general' }"
           role="tab"
-          :aria-selected="activeKnowledgeCollection === tab.collectionName"
-          @click="activeKnowledgeCollection = tab.collectionName"
+          :aria-selected="knowledgeDialogTab === 'general'"
+          @click="openKnowledgeDialog('general')"
         >
-          <span>{{ tab.collectionName }}</span>
-          <em>{{ tab.indexed }}/{{ tab.total }} 已索引</em>
+          <DatabaseZap :size="17" />
+          <span>通用知识库</span>
+          <em>{{ knowledgeFiles.length }} 个文件</em>
+        </button>
+        <button
+          type="button"
+          class="knowledge-mode-tab"
+          :class="{ active: knowledgeDialogTab === 'salesTraining' }"
+          role="tab"
+          :aria-selected="knowledgeDialogTab === 'salesTraining'"
+          @click="openKnowledgeDialog('salesTraining')"
+        >
+          <BrainCircuit :size="17" />
+          <span>销售训练资料</span>
+          <em>{{ trainingKnowledgeBatchTotal || trainingBatchTotal }} 个批次</em>
         </button>
       </div>
 
-      <div v-loading="knowledgeLoading" class="knowledge-dialog-body">
-        <div v-if="knowledgeFiles.length === 0" class="empty-knowledge">暂无知识库文件</div>
-        <div v-else-if="filteredKnowledgeFiles.length === 0" class="empty-knowledge">没有匹配的知识库文件</div>
-        <div v-else class="knowledge-grid">
-          <article v-for="file in pagedKnowledgeFiles" :key="file.document_id" class="knowledge-file">
-            <div class="knowledge-file-main">
-              <FileText :size="18" />
-              <div class="knowledge-file-info">
-                <strong>{{ file.filename }}</strong>
-                <span>{{ file.file_type.toUpperCase() }} · {{ formatFileSize(file.file_size) }} · {{ file.chunk_count }} chunks</span>
-              </div>
-              <el-tag :type="knowledgeStatusType(file.status)" effect="plain" size="small">
-                {{ file.status }}
-              </el-tag>
+      <section v-show="knowledgeDialogTab === 'general'" class="knowledge-mode-panel">
+        <div class="dialog-toolbar">
+          <div class="dialog-toolbar-main">
+            <div>
+              <strong>{{ filteredKnowledgeFiles.length }}</strong>
+              <span>个文件</span>
+              <em>{{ activeIndexedKnowledgeCount }} 个已索引</em>
             </div>
-            <div class="knowledge-file-meta">
-              <span>版本 v{{ file.version }}</span>
-              <span>{{ formatDateTime(file.updated_at) }}</span>
-            </div>
-            <div v-if="file.error_message" class="knowledge-error">{{ file.error_message }}</div>
-            <div class="knowledge-file-actions">
-              <el-button
-                :icon="Eye"
-                size="small"
-                :loading="activeKnowledgeAction === knowledgeActionKey('preview', file.document_id)"
-                :disabled="Boolean(activeKnowledgeAction)"
-                @click="handlePreviewKnowledgeFile(file)"
-              >
-                预览
-              </el-button>
-              <el-button
-                :icon="RefreshCw"
-                size="small"
-                :loading="activeKnowledgeAction === knowledgeActionKey('reindex', file.document_id)"
-                :disabled="Boolean(activeKnowledgeAction)"
-                @click="handleReindexKnowledgeFile(file)"
-              >
-                重建
-              </el-button>
-              <el-button
-                :icon="Trash2"
-                plain
-                size="small"
-                type="danger"
-                :loading="activeKnowledgeAction === knowledgeActionKey('delete', file.document_id)"
-                :disabled="Boolean(activeKnowledgeAction)"
-                @click="handleDeleteKnowledgeFile(file)"
-              >
-                删除
-              </el-button>
-            </div>
-          </article>
+            <el-input
+              v-model="knowledgeKeyword"
+              class="dialog-search-input"
+              clearable
+              :prefix-icon="Search"
+              placeholder="按文件名模糊查询"
+            />
+          </div>
+          <div class="dialog-actions">
+            <el-button :icon="Upload" :loading="uploadingKnowledge" type="primary" @click="openKnowledgeFilePicker">
+              上传文件
+            </el-button>
+            <el-button :icon="RefreshCw" :loading="knowledgeLoading" @click="refreshKnowledgeFiles">
+              刷新
+            </el-button>
+            <el-button :icon="RefreshCw" :loading="reindexingAll" type="warning" plain @click="handleReindexAllKnowledgeFiles">
+              清空并重建
+            </el-button>
+          </div>
         </div>
-      </div>
 
-      <template #footer>
+        <div class="knowledge-collection-tabs" role="tablist" aria-label="知识库列表">
+          <button
+            v-for="tab in knowledgeCollectionTabs"
+            :key="tab.collectionName"
+            type="button"
+            class="knowledge-collection-tab"
+            :class="{ active: activeKnowledgeCollection === tab.collectionName }"
+            role="tab"
+            :aria-selected="activeKnowledgeCollection === tab.collectionName"
+            @click="activeKnowledgeCollection = tab.collectionName"
+          >
+            <span>{{ tab.collectionName }}</span>
+            <em>{{ tab.indexed }}/{{ tab.total }} 已索引</em>
+          </button>
+        </div>
+
+        <div v-loading="knowledgeLoading" class="knowledge-dialog-body">
+          <div v-if="knowledgeFiles.length === 0" class="empty-knowledge">暂无知识库文件</div>
+          <div v-else-if="filteredKnowledgeFiles.length === 0" class="empty-knowledge">没有匹配的知识库文件</div>
+          <div v-else class="knowledge-grid">
+            <article v-for="file in pagedKnowledgeFiles" :key="file.document_id" class="knowledge-file">
+              <div class="knowledge-file-main">
+                <FileText :size="18" />
+                <div class="knowledge-file-info">
+                  <strong>{{ file.filename }}</strong>
+                  <span>{{ file.file_type.toUpperCase() }} · {{ formatFileSize(file.file_size) }} · {{ file.chunk_count }} chunks</span>
+                </div>
+                <el-tag :type="knowledgeStatusType(file.status)" effect="plain" size="small">
+                  {{ file.status }}
+                </el-tag>
+              </div>
+              <div class="knowledge-file-meta">
+                <span>版本 v{{ file.version }}</span>
+                <span>{{ formatDateTime(file.updated_at) }}</span>
+              </div>
+              <div v-if="file.error_message" class="knowledge-error">{{ file.error_message }}</div>
+              <div class="knowledge-file-actions">
+                <el-button
+                  :icon="Eye"
+                  size="small"
+                  :loading="activeKnowledgeAction === knowledgeActionKey('preview', file.document_id)"
+                  :disabled="Boolean(activeKnowledgeAction)"
+                  @click="handlePreviewKnowledgeFile(file)"
+                >
+                  预览
+                </el-button>
+                <el-button
+                  :icon="RefreshCw"
+                  size="small"
+                  :loading="activeKnowledgeAction === knowledgeActionKey('reindex', file.document_id)"
+                  :disabled="Boolean(activeKnowledgeAction)"
+                  @click="handleReindexKnowledgeFile(file)"
+                >
+                  重建
+                </el-button>
+                <el-button
+                  :icon="Trash2"
+                  plain
+                  size="small"
+                  type="danger"
+                  :loading="activeKnowledgeAction === knowledgeActionKey('delete', file.document_id)"
+                  :disabled="Boolean(activeKnowledgeAction)"
+                  @click="handleDeleteKnowledgeFile(file)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section v-show="knowledgeDialogTab === 'salesTraining'" class="knowledge-mode-panel training-knowledge-dialog-body">
+        <TrainingKnowledgeWorkspace
+          v-model:batch-page="trainingKnowledgeBatchPage"
+          v-model:chunk-detail-visible="trainingKnowledgeChunkDetailVisible"
+          v-model:version-dialog-visible="trainingKnowledgeVersionDialogVisible"
+          v-model:training-preview-visible="trainingKnowledgePreviewVisible"
+          :selected-file="trainingKnowledgeSelectedFile"
+          :upload-result="trainingKnowledgeUploadResult"
+          :training-batches="trainingKnowledgeBatches"
+          :batch-total="trainingKnowledgeBatchTotal"
+          :active-batch-id="activeTrainingKnowledgeBatchId"
+          :chunk-type-summaries="trainingKnowledgeChunkTypeSummaries"
+          :active-chunk-type-chunks="activeTrainingKnowledgeChunkTypeChunks"
+          :active-chunk-summary="activeTrainingKnowledgeChunkSummary"
+          :batch-versions="trainingKnowledgeBatchVersions"
+          :active-version-group-id="activeTrainingKnowledgeVersionGroupId"
+          :training-preview="trainingKnowledgePreview"
+          :loading-batches="trainingKnowledgeLoadingBatches"
+          :loading-chunks="trainingKnowledgeLoadingChunks"
+          :uploading="trainingKnowledgeUploading"
+          :publishing-batch-id="trainingKnowledgePublishingBatchId"
+          :rolling-back-batch-id="trainingKnowledgeRollingBackBatchId"
+          :reparsing-batch-id="trainingKnowledgeReparsingBatchId"
+          :previewing-batch-id="trainingKnowledgePreviewingBatchId"
+          :deleting-batch-id="trainingKnowledgeDeletingBatchId"
+          :version-loading="trainingKnowledgeVersionLoading"
+          :upload-help-description="trainingKnowledgeUploadHelpDescription"
+          :current-upload-chunk-count="currentTrainingKnowledgeChunkCount"
+          :current-upload-point-count="currentTrainingKnowledgePointCount"
+          :current-upload-status="currentTrainingKnowledgeStatus"
+          :current-upload-duplicate-text="currentTrainingKnowledgeDuplicateText"
+          :can-clear-upload-area="canClearTrainingKnowledgeUploadArea"
+          :upload-quality-report="trainingKnowledgeUploadQualityReport"
+          :upload-quality-warnings="trainingKnowledgeUploadQualityWarnings"
+          :upload-quality-metrics="trainingKnowledgeUploadQualityMetrics"
+          :upload-quality-split-text="trainingKnowledgeUploadQualitySplitText"
+          :upload-publish-validation="trainingKnowledgeUploadPublishValidation"
+          :format-time="formatDateTime"
+          :batch-status-label="trainingKnowledgeBatchStatusLabel"
+          :quality-level-label="trainingKnowledgeQualityLevelLabel"
+          :quality-level-class="trainingKnowledgeQualityLevelClass"
+          :chunk-summary-title="trainingKnowledgeChunkSummaryTitle"
+          :chunk-usage-label="trainingKnowledgeChunkUsageLabel"
+          :case-part-label="trainingKnowledgeCasePartLabel"
+          :chunk-detail-meta="trainingKnowledgeChunkDetailMeta"
+          @file-change="onTrainingKnowledgeFileChange"
+          @clear-upload="clearTrainingKnowledgeUploadArea"
+          @upload="uploadTrainingKnowledgeFile"
+          @refresh-batches="refreshTrainingKnowledgeBatches"
+          @publish-batch="publishTrainingKnowledgeFileBatch"
+          @reparse-batch="reparseTrainingKnowledgeFileBatch"
+          @rollback-batch="rollbackTrainingKnowledgeFileBatch"
+          @open-batch-versions="openTrainingKnowledgeBatchVersions"
+          @open-training-batch="openTrainingKnowledgeBatch"
+          @preview-batch="previewTrainingKnowledgeFileBatch"
+          @delete-batch="deleteTrainingKnowledgeFileBatch"
+          @open-chunk-summary="openTrainingKnowledgeChunkSummary"
+        />
+      </section>
+
+      <template v-if="knowledgeDialogTab === 'general'" #footer>
         <el-pagination
           v-model:current-page="knowledgePage"
           background
@@ -1365,3 +2111,390 @@ onMounted(() => {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.knowledge-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-color, rgba(148, 163, 184, 0.24)) 76%, #22d3ee 24%);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--card-bg, rgba(15, 23, 42, 0.72)) 92%, #38bdf8 8%), transparent),
+    color-mix(in srgb, var(--panel-bg, rgba(15, 23, 42, 0.72)) 88%, transparent);
+}
+
+.knowledge-mode-tab {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary, rgba(226, 232, 240, 0.72));
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.knowledge-mode-tab::after {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  left: 16px;
+  height: 2px;
+  content: "";
+  background: linear-gradient(90deg, transparent, #22d3ee, #8b5cf6, transparent);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.knowledge-mode-tab:hover,
+.knowledge-mode-tab.active {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, #22d3ee 52%, var(--border-color, rgba(148, 163, 184, 0.24)));
+  color: var(--text-primary, #f8fafc);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #22d3ee 14%, transparent), color-mix(in srgb, #8b5cf6 10%, transparent)),
+    color-mix(in srgb, var(--card-bg, rgba(15, 23, 42, 0.72)) 92%, transparent);
+}
+
+.knowledge-mode-tab.active::after {
+  opacity: 1;
+}
+
+.knowledge-mode-tab svg {
+  color: #22d3ee;
+}
+
+.knowledge-mode-tab span {
+  overflow: hidden;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-mode-tab em {
+  color: var(--text-secondary, rgba(226, 232, 240, 0.66));
+  font-size: 12px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.knowledge-mode-panel {
+  min-width: 0;
+}
+
+.training-knowledge-dialog-body {
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.training-knowledge-dialog-body :deep(.training-knowledge-workspace) {
+  grid-template-columns: minmax(280px, 390px) minmax(0, 1fr);
+}
+
+.sales-cockpit {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-color, rgba(148, 163, 184, 0.24)) 70%, #2dd4bf 30%);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--panel-bg, rgba(15, 23, 42, 0.8)) 88%, #22d3ee 12%), transparent),
+    var(--panel-bg, rgba(15, 23, 42, 0.72));
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+}
+
+.sales-cockpit::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.12), transparent),
+    repeating-linear-gradient(90deg, rgba(148, 163, 184, 0.08) 0 1px, transparent 1px 84px);
+  opacity: 0.55;
+}
+
+.sales-cockpit-main,
+.sales-stat-grid,
+.sales-cockpit-lower {
+  position: relative;
+  z-index: 1;
+}
+
+.sales-cockpit-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.sales-cockpit-heading {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sales-cockpit-heading h3 {
+  margin: 0;
+  color: var(--text-primary, #e5eefb);
+  font-size: 22px;
+  font-weight: 750;
+}
+
+.sales-cockpit-heading p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--text-secondary, rgba(226, 232, 240, 0.72));
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.sales-cockpit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.sales-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-stat-card,
+.sales-flow-panel,
+.sales-recent-panel {
+  border: 1px solid color-mix(in srgb, var(--border-color, rgba(148, 163, 184, 0.22)) 80%, #38bdf8 20%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card-bg, rgba(15, 23, 42, 0.66)) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.sales-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.sales-stat-card > span {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 8px;
+  color: #e0f2fe;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.78), rgba(45, 212, 191, 0.42));
+}
+
+.sales-stat-card strong {
+  display: block;
+  color: var(--text-primary, #f8fafc);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.sales-stat-card em,
+.sales-stat-card p {
+  display: block;
+  margin: 0;
+  font-style: normal;
+}
+
+.sales-stat-card em {
+  margin-top: 4px;
+  color: var(--text-primary, #e2e8f0);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sales-stat-card p {
+  margin-top: 3px;
+  color: var(--text-secondary, rgba(226, 232, 240, 0.68));
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sales-stat-card.tone-violet > span {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.78), rgba(34, 211, 238, 0.36));
+}
+
+.sales-stat-card.tone-amber > span {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.78), rgba(20, 184, 166, 0.34));
+}
+
+.sales-stat-card.tone-blue > span {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.78), rgba(6, 182, 212, 0.42));
+}
+
+.sales-cockpit-lower {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.sales-flow-panel,
+.sales-recent-panel {
+  min-width: 0;
+  padding: 14px;
+}
+
+.sales-flow-steps {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.sales-flow-steps article {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.sales-flow-steps article > span {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.65);
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.1);
+}
+
+.sales-flow-steps article.status-ready > span {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12), 0 0 18px rgba(34, 197, 94, 0.34);
+}
+
+.sales-flow-steps article.status-active > span {
+  background: #38bdf8;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12), 0 0 18px rgba(56, 189, 248, 0.38);
+}
+
+.sales-flow-steps strong,
+.sales-recent-list strong,
+.sales-batch-list strong {
+  color: var(--text-primary, #e5eefb);
+  font-size: 13px;
+}
+
+.sales-flow-steps p,
+.sales-recent-list em,
+.sales-batch-list em,
+.sales-recent-list p,
+.sales-batch-list p {
+  margin: 3px 0 0;
+  color: var(--text-secondary, rgba(226, 232, 240, 0.66));
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.sales-recent-list,
+.sales-batch-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sales-recent-list button,
+.sales-batch-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--border-color, rgba(148, 163, 184, 0.18)) 75%, #22d3ee 25%);
+  border-radius: 8px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.sales-recent-list button:hover,
+.sales-batch-list button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(34, 211, 238, 0.55);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.sales-recent-list button > span,
+.sales-batch-list button > span {
+  min-width: 0;
+}
+
+.sales-recent-list strong,
+.sales-batch-list strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-recent-list b {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: #ecfeff;
+  background: linear-gradient(135deg, #0891b2, #7c3aed);
+  font-size: 13px;
+}
+
+@media (max-width: 1120px) {
+  .sales-stat-grid,
+  .sales-cockpit-lower {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sales-flow-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .knowledge-mode-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .training-knowledge-dialog-body :deep(.training-knowledge-workspace) {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-cockpit-main,
+  .sales-cockpit-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sales-stat-grid,
+  .sales-cockpit-lower {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

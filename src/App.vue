@@ -32,6 +32,10 @@ function openChatHistory(conversationId: string) {
   chatHistoryRequest.value = { token: Date.now(), conversationId }
 }
 
+function openSalesTraining() {
+  activePage.value = 'salesTraining'
+}
+
 watch(themeMode, (nextTheme) => {
   window.localStorage.setItem('ai-rag-agent-theme', nextTheme)
   document.documentElement.dataset.theme = nextTheme
@@ -75,7 +79,12 @@ onMounted(() => {
     </aside>
 
     <section class="portal-content" :class="`page-${activePage}`">
-      <HomePage v-if="activePage === 'home'" :theme-mode="themeMode" @open-chat-history="openChatHistory" />
+      <HomePage
+        v-if="activePage === 'home'"
+        :theme-mode="themeMode"
+        @open-chat-history="openChatHistory"
+        @open-sales-training="openSalesTraining"
+      />
       <ChatPage v-else-if="activePage === 'chat'" :theme-mode="themeMode" :history-request="chatHistoryRequest" />
       <SalesTrainingPage v-else-if="activePage === 'salesTraining'" :theme-mode="themeMode" />
       <ExamPage v-else :theme-mode="themeMode" />
