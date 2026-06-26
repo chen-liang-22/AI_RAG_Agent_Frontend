@@ -4,7 +4,6 @@ import {
   Activity,
   ArrowLeft,
   Bot,
-  Boxes,
   BrainCircuit,
   ChevronRight,
   Clock3,
@@ -16,7 +15,6 @@ import {
   Pencil,
   RefreshCw,
   Search,
-  ShieldCheck,
   Sparkles,
   Target,
   Trash2,
@@ -201,11 +199,6 @@ const dictionaryForm = ref<DictionaryFormState>({
   metadataText: '{}',
 })
 
-const indexedCount = computed(() => knowledgeFiles.value.filter((item) => item.status === 'indexed').length)
-const collectionCount = computed(() => new Set([...(health.value?.collections || []), ...knowledgeFiles.value.map((item) => item.collection_name)]).size)
-const totalVectorPointCount = computed(() => Object.values(health.value?.collection_points || {}).reduce((total, count) => total + Number(count || 0), 0))
-const dictionaryItemCount = computed(() => dictionaries.value.reduce((total, group) => total + countItems(group.items), 0))
-const latestConversation = computed(() => conversations.value[0])
 const trainingPublishedBatchCount = computed(() => trainingBatches.value.filter((item) => trainingStatusKind(item.status) === 'published').length)
 const trainingPendingBatchCount = computed(() => trainingBatches.value.filter((item) => trainingStatusKind(item.status) === 'pending').length)
 const trainingFailedBatchCount = computed(() => trainingBatches.value.filter((item) => trainingStatusKind(item.status) === 'failed').length)
@@ -272,10 +265,6 @@ const salesTrainingStats = computed(() => [
   { label: '陪练方案', value: trainingPlanTotal.value, detail: `${trainingPlanReadyCount.value} 已就绪 / ${trainingPlanStaleCount.value} 待重生成`, icon: Target, tone: 'violet' },
   { label: '训练会话', value: trainingSessionTotal.value, detail: `${trainingActiveSessionCount.value} 进行中 / ${trainingScoringSessionCount.value} 待评分`, icon: MessageSquareText, tone: 'amber' },
   { label: '正式向量', value: trainingVectorPoints.value, detail: `临时预览 ${trainingStagingVectorPoints.value} 点`, icon: BrainCircuit, tone: 'blue' },
-])
-
-const cockpitCards = computed(() => [
-  { title: '服务健康', value: serviceStatusLabel(health.value?.status), detail: `Qdrant ${serviceStatusLabel(health.value?.qdrant)}`, icon: ShieldCheck, tone: health.value?.status === 'ok' ? 'good' : 'warn' },
 ])
 
 const trainingTimeline = computed(() => [
@@ -406,19 +395,8 @@ function dictionaryCodeByMetadata(dictionaryCode: string, key: string, value: un
   return dictionaryItems(dictionaryCode).find((item) => item.metadata?.[key] === value)?.item_code || ''
 }
 
-function countItems(items: DictionaryGroupResponse['items']): number { // 统计字典树全部节点数量
-  return items.reduce((total, item) => total + 1 + countItems(item.children || []), 0)
-}
-
 function dictionaryGroupItemCount(group: DictionaryGroupResponse) { // 统计单个父级字典下的全部字典项数量
   return flattenDictionaryItems(group.items).length
-}
-
-function serviceStatusLabel(status?: string) { // 把服务状态编码转换成中文文案
-  if (status === 'ok') return '正常'
-  if (status === 'degraded') return '降级'
-  if (status === 'unavailable') return '不可用'
-  return '未知'
 }
 
 function trainingStatusKind(status: string) { // 把训练资料批次状态归类成首页容易读懂的状态组
@@ -1347,7 +1325,7 @@ onMounted(() => {
 
     <header class="page-hero">
       <div>
-        <span class="page-kicker"><Activity :size="16" /> 系统驾驶舱</span>
+        <span class="page-kicker"><Activity :size="14" /> 系统驾驶舱</span>
         <h2>知识服务总览</h2>
         <p>集中维护知识库、字典表、服务状态与接口配置，智能客服页面只负责问答。</p>
       </div>
@@ -1358,21 +1336,10 @@ onMounted(() => {
       </div>
     </header>
 
-    <section class="cockpit-grid">
-      <article v-for="card in cockpitCards" :key="card.title" class="cockpit-card" :class="`tone-${card.tone}`">
-        <span class="cockpit-icon"><component :is="card.icon" :size="22" /></span>
-        <div>
-          <strong>{{ card.value }}</strong>
-          <h3>{{ card.title }}</h3>
-          <p>{{ card.detail }}</p>
-        </div>
-      </article>
-    </section>
-
     <section class="sales-cockpit">
       <div class="sales-cockpit-main">
         <div class="sales-cockpit-heading">
-          <span class="page-kicker"><BrainCircuit :size="16" /> AI销售训练驾驶舱</span>
+          <span class="page-kicker"><BrainCircuit :size="14" /> AI销售训练驾驶舱</span>
           <h3>从训练资料到实战复盘的销售能力闭环</h3>
           <p>聚合训练资料、AI 客户方案、对话会话和评分状态，首页只展示运行态势，具体配置进入销售陪练模块处理。</p>
         </div>
@@ -1385,7 +1352,7 @@ onMounted(() => {
 
       <div class="sales-stat-grid">
         <article v-for="item in salesTrainingStats" :key="item.label" class="sales-stat-card" :class="`tone-${item.tone}`">
-          <span><component :is="item.icon" :size="19" /></span>
+          <span><component :is="item.icon" :size="16" /></span>
           <div>
             <strong>{{ item.value }}</strong>
             <em>{{ item.label }}</em>
@@ -1397,7 +1364,7 @@ onMounted(() => {
       <div class="sales-cockpit-lower">
         <div class="sales-flow-panel">
           <div class="panel-title panel-title-between">
-            <span><Target :size="18" />训练链路</span>
+            <span><Target :size="16" />训练链路</span>
             <em>{{ trainingFailedBatchCount }} 个异常批次</em>
           </div>
           <div class="sales-flow-steps">
@@ -1413,7 +1380,7 @@ onMounted(() => {
 
         <div class="sales-recent-panel">
           <div class="panel-title panel-title-between">
-            <span><GraduationCap :size="18" />最近训练</span>
+            <span><GraduationCap :size="16" />最近训练</span>
             <em>{{ trainingSessionTotal }} 条记录</em>
           </div>
           <div class="sales-recent-list">
@@ -1436,7 +1403,7 @@ onMounted(() => {
 
         <div class="sales-recent-panel">
           <div class="panel-title panel-title-between">
-            <span><DatabaseZap :size="18" />训练资料</span>
+            <span><DatabaseZap :size="16" />训练资料</span>
             <em>{{ trainingBatchTotal }} 个批次</em>
           </div>
           <div class="sales-batch-list">
@@ -1461,7 +1428,7 @@ onMounted(() => {
     <section class="dashboard-panels">
       <article class="dashboard-panel">
         <div class="panel-title panel-title-between">
-          <span><Clock3 :size="18" />最近会话</span>
+          <span><Clock3 :size="16" />最近会话</span>
           <em>{{ conversationTotal }} 条记录</em>
         </div>
         <div class="recent-conversation-strip" aria-label="最近会话概览">
@@ -2099,7 +2066,7 @@ onMounted(() => {
   position: relative;
   display: grid;
   gap: 16px;
-  padding: 18px;
+  padding: 18px 20px;
   border: 1px solid color-mix(in srgb, var(--border-color, rgba(148, 163, 184, 0.24)) 70%, #2dd4bf 30%);
   border-radius: 8px;
   background:
@@ -2131,19 +2098,19 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
 }
 
 .sales-cockpit-heading {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
 }
 
 .sales-cockpit-heading h3 {
   margin: 0;
   color: var(--text-primary, #e5eefb);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 750;
 }
 
@@ -2151,21 +2118,21 @@ onMounted(() => {
   max-width: 760px;
   margin: 0;
   color: var(--text-secondary, rgba(226, 232, 240, 0.72));
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .sales-cockpit-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .sales-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .sales-stat-card,
@@ -2180,16 +2147,16 @@ onMounted(() => {
 .sales-stat-card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  padding: 14px;
+  padding: 10px 12px;
 }
 
 .sales-stat-card > span {
   display: grid;
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border-radius: 8px;
   color: #e0f2fe;
@@ -2199,7 +2166,7 @@ onMounted(() => {
 .sales-stat-card strong {
   display: block;
   color: var(--text-primary, #f8fafc);
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -2211,16 +2178,16 @@ onMounted(() => {
 }
 
 .sales-stat-card em {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--text-primary, #e2e8f0);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .sales-stat-card p {
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--text-secondary, rgba(226, 232, 240, 0.68));
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2241,7 +2208,7 @@ onMounted(() => {
 .sales-cockpit-lower {
   display: grid;
   grid-template-columns: 1.1fr 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .sales-flow-panel,

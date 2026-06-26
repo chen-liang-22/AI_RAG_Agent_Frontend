@@ -539,8 +539,8 @@ button, input, textarea { font: inherit; }
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
+  gap: 5px;
+  padding: 4px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
@@ -552,9 +552,9 @@ button, input, textarea { font: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  min-height: 42px;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--line-strong) 82%, transparent);
   border-radius: 999px;
   color: var(--text);
@@ -574,11 +574,29 @@ button, input, textarea { font: inherit; }
   box-shadow: var(--shadow-sm);
 }
 
+.portal-health-button.tone-good {
+  border-color: color-mix(in srgb, var(--cyan) 42%, var(--line));
+  color: color-mix(in srgb, var(--cyan) 82%, var(--text));
+  background:
+    radial-gradient(circle at 50% 0, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 62%),
+    color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--cyan) 18%, transparent);
+}
+
+.portal-health-button.tone-warn,
+.portal-health-button.tone-loading {
+  border-color: color-mix(in srgb, var(--amber) 48%, var(--line));
+  color: color-mix(in srgb, var(--amber) 86%, var(--text));
+  background:
+    radial-gradient(circle at 50% 0, color-mix(in srgb, var(--amber) 20%, transparent), transparent 62%),
+    color-mix(in srgb, var(--surface) 86%, transparent);
+}
+
 .portal-user-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 14px;
-  font-size: 15px;
+  width: 24px;
+  height: 24px;
+  border-radius: 10px;
+  font-size: 13px;
   font-weight: 900;
   box-shadow: 0 10px 22px color-mix(in srgb, var(--primary) 22%, transparent);
 }
@@ -594,9 +612,9 @@ button, input, textarea { font: inherit; }
 .portal-content {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
-  padding: 22px;
+  padding: 12px 18px 18px;
 }
 
 .portal-content.page-chat {
@@ -610,7 +628,7 @@ button, input, textarea { font: inherit; }
   display: flex;
   justify-content: flex-end;
   min-width: 0;
-  min-height: 56px;
+  min-height: 34px;
   pointer-events: none;
 }
 
@@ -639,32 +657,32 @@ button, input, textarea { font: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  border-radius: 18px;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
   overflow: hidden;
 }
 
 .dashboard-hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .page-kicker {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 4px;
   color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.page-hero h2 { font-size: 24px; }
-.page-hero p { max-width: 760px; margin-top: 6px; }
+.page-hero h2 { font-size: 20px; }
+.page-hero p { max-width: 760px; margin-top: 4px; font-size: 13px; }
 
 .cockpit-grid {
   display: grid;

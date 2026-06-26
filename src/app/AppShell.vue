@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { LoaderCircle, LogOut, Moon, Sparkles, Sun } from 'lucide-vue-next'
-import type { AuthUser } from '../shared/api'
+import { computed, onMounted, ref } from 'vue'
+import { DatabaseZap, LoaderCircle, LogOut, Moon, RefreshCw, ShieldCheck, Sparkles, Sun } from 'lucide-vue-next'
+import { fetchHealth, type AuthUser, type HealthResponse } from '../shared/api'
 import { portalPages, type MainPage, type ThemeMode } from './navigation'
 
 const props = defineProps<{
@@ -18,13 +18,56 @@ const emit = defineEmits<{
 }>()
 
 const themeToggleIcon = computed(() => (props.themeMode === 'dark' ? Sun : Moon))
+const health = ref<HealthResponse | null>(null)
+const healthLoading = ref(false)
+const healthError = ref('')
 const currentUserInitial = computed(() => {
   const displayName = props.currentUser.display_name || props.currentUser.username || 'U'
   return displayName.slice(0, 1).toUpperCase()
 })
+const healthTone = computed(() => {
+  if (healthLoading.value) return 'loading'
+  if (healthError.value) return 'warn'
+  if (health.value?.status === 'ok' && health.value?.qdrant === 'ok') return 'good'
+  return 'warn'
+})
+const healthTitle = computed(() => {
+  if (healthLoading.value) return '服务健康检查中'
+  if (healthError.value) return `服务健康未知：${healthError.value}`
+  const serviceStatus = statusLabel(health.value?.status)
+  const qdrantStatus = statusLabel(health.value?.qdrant)
+  const collectionName = health.value?.collection_name || '未知'
+  return `服务：${serviceStatus}\nQdrant：${qdrantStatus}\nCollection：${collectionName}`
+})
+const healthIcon = computed(() => (health.value?.qdrant === 'ok' ? DatabaseZap : ShieldCheck))
+
 function toggleTheme() {
   emit('update:themeMode', props.themeMode === 'dark' ? 'light' : 'dark')
 }
+
+function statusLabel(status?: string) {
+  if (status === 'ok') return '正常'
+  if (status === 'unavailable') return '不可用'
+  if (status === 'degraded') return '降级'
+  return '未知'
+}
+
+async function refreshHealth() {
+  healthLoading.value = true
+  healthError.value = ''
+  try {
+    health.value = await fetchHealth()
+  } catch (error) {
+    health.value = null
+    healthError.value = error instanceof Error ? error.message : '健康检查失败'
+  } finally {
+    healthLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void refreshHealth()
+})
 </script>
 
 <template>
@@ -58,6 +101,19 @@ function toggleTheme() {
     <section class="portal-content" :class="`page-${activePage}`">
       <div class="portal-topbar">
         <div class="portal-account-panel" aria-label="账户操作">
+          <button
+            class="portal-icon-button portal-health-button"
+            :class="`tone-${healthTone}`"
+            type="button"
+            :title="healthTitle"
+            aria-label="服务健康状态"
+            :disabled="healthLoading"
+            @click="refreshHealth"
+          >
+            <RefreshCw v-if="healthLoading" class="spin" :size="16" />
+            <component :is="healthIcon" v-else :size="16" />
+          </button>
+
           <button
             class="portal-icon-button portal-profile-button"
             type="button"
