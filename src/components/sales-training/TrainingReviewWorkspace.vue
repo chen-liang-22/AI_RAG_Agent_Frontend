@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 训练复盘工作区：只负责历史训练与评分报告展示，数据加载和历史详情读取仍由父页面统一处理。
 import { Route, Trophy } from 'lucide-vue-next'
-import type { TrainingScoreResponse, TrainingSessionSummaryResponse } from '../../api'
+import type { TrainingScoreResponse, TrainingSessionSummaryResponse } from '../../shared/api'
 import { displayValue, reportPointList } from '../../utils/trainingDisplay'
 
 const props = defineProps<{

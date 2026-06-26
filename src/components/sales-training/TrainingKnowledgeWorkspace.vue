@@ -16,7 +16,7 @@ import type {
   TrainingKnowledgeChunkResponse,
   TrainingKnowledgePreviewResponse,
   TrainingKnowledgeUploadResponse,
-} from '../../api'
+} from '../../shared/api'
 import { displayValue } from '../../utils/trainingDisplay'
 
 interface ChunkTypeSummary {
