@@ -22,9 +22,21 @@ const forbiddenHomeFragments = [
   'dashboard-knowledge-table',
 ]
 
+const forbiddenStyleFragments = [
+  'cockpit-grid',
+  'cockpit-card',
+  'cockpit-icon',
+]
+
 for (const fragment of forbiddenHomeFragments) {
   if (homeSource.includes(fragment)) {
     throw new Error(`首页仍包含知识库概览片段：${fragment}`)
+  }
+}
+
+for (const fragment of forbiddenStyleFragments) {
+  if (styleSource.includes(fragment)) {
+    throw new Error(`全局样式仍残留已删除首页模块片段：${fragment}`)
   }
 }
 
@@ -53,6 +65,9 @@ assertIncludes(appShellSource, ':title="healthTitle"', '服务健康状态按钮
 
 assertRuleIncludes(styleSource, '.portal-topbar', 'min-height: 34px')
 assertRuleIncludes(styleSource, '.portal-icon-button', 'width: 34px')
+assertRuleIncludes(styleSource, '.portal-brand-mark', 'width: 36px')
+assertRuleIncludes(styleSource, '.portal-nav-item', 'min-height: 62px')
+assertRuleIncludes(styleSource, '.portal-nav-item span', 'width: 32px')
 assertRuleIncludes(styleSource, '.portal-health-button.tone-good', 'box-shadow: 0 0 24px')
 assertRuleIncludes(styleSource, '.page-hero', 'padding: 10px 14px')
 assertRuleIncludes(homeSource, '.sales-cockpit', 'padding: 18px 20px')
@@ -61,5 +76,9 @@ assertRuleIncludes(homeSource, '.sales-stat-card > span', 'width: 32px')
 assertIncludes(homeSource, 'sales-stat-card', '首页销售训练概览卡片被误删')
 assertIncludes(homeSource, ':size="16"', '首页紧凑图标尺寸未生效')
 assertIncludes(homeSource, ':size="14"', '首页页眉小图标尺寸未生效')
+assertIncludes(appShellSource, '<Sparkles :size="18" />', '侧栏品牌图标尺寸未缩小')
+assertIncludes(appShellSource, '<component :is="page.icon" :size="16" />', '侧栏导航图标尺寸未缩小')
+assertIncludes(appShellSource, '<LogOut v-else :size="16" />', '顶栏退出图标尺寸未缩小')
+assertIncludes(appShellSource, '<component :is="themeToggleIcon" :size="16" />', '顶栏主题图标尺寸未缩小')
 
 console.log('首页与顶栏状态入口契约检查通过')

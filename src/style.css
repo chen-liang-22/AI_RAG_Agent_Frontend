@@ -377,7 +377,6 @@ button, input, textarea { font: inherit; }
 .portal-nav-item,
 .portal-theme-button,
 .dashboard-panel,
-.cockpit-card,
 .exam-control-panel,
 .page-hero,
 .data-table-lite,
@@ -389,9 +388,9 @@ button, input, textarea { font: inherit; }
 
 .portal-brand {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  padding: 16px;
+  padding: 12px;
   border-radius: 14px;
   position: relative;
   overflow: hidden;
@@ -399,8 +398,7 @@ button, input, textarea { font: inherit; }
 
 .portal-brand::after,
 .brand::after,
-.page-hero::after,
-.cockpit-card::after {
+.page-hero::after {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -411,7 +409,7 @@ button, input, textarea { font: inherit; }
 }
 
 .portal-brand-mark,
-.cockpit-icon {
+.dashboard-action-tile > span:first-child {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -420,11 +418,14 @@ button, input, textarea { font: inherit; }
 }
 
 .portal-brand-mark {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   color: #fff;
   background: linear-gradient(135deg, var(--primary), var(--primary-2));
 }
+
+.portal-brand h1 { font-size: 24px; }
+.portal-brand p { font-size: 12px; }
 
 .portal-brand h1,
 .page-hero h2,
@@ -436,8 +437,7 @@ button, input, textarea { font: inherit; }
 .portal-brand p,
 .page-hero p,
 .panel-note,
-.data-table-lite em,
-.cockpit-card p {
+.data-table-lite em {
   margin: 0;
   color: var(--text-soft);
 }
@@ -458,12 +458,12 @@ button, input, textarea { font: inherit; }
 .portal-nav-item {
   position: relative;
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 4px 10px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 3px 9px;
   align-items: center;
   justify-items: start;
-  min-height: 72px;
-  padding: 14px;
+  min-height: 62px;
+  padding: 11px 12px;
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -475,19 +475,19 @@ button, input, textarea { font: inherit; }
   align-items: center;
   justify-content: center;
   grid-row: span 2;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   color: var(--primary);
   background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 
-.portal-nav-item strong { font-size: 15px; }
+.portal-nav-item strong { font-size: 14px; }
 .portal-nav-item em {
   color: var(--text-muted);
   font-style: normal;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .portal-nav-item.active,
@@ -500,8 +500,8 @@ button, input, textarea { font: inherit; }
 
 .portal-nav-item.active::before {
   position: absolute;
-  top: 14px;
-  bottom: 14px;
+  top: 12px;
+  bottom: 12px;
   left: 0;
   width: 3px;
   content: '';
@@ -684,61 +684,6 @@ button, input, textarea { font: inherit; }
 .page-hero h2 { font-size: 20px; }
 .page-hero p { max-width: 760px; margin-top: 4px; font-size: 13px; }
 
-.cockpit-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.cockpit-card {
-  position: relative;
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  min-height: 96px;
-  padding: 14px;
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.cockpit-card::before {
-  position: absolute;
-  top: 0;
-  right: 14px;
-  left: 14px;
-  height: 3px;
-  content: '';
-  border-radius: 0 0 999px 999px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 72%, var(--cyan)), transparent);
-}
-
-.cockpit-card strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 20px;
-}
-
-.cockpit-card h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
-}
-
-.cockpit-icon {
-  width: 40px;
-  height: 40px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--primary), var(--cyan));
-}
-
-.tone-good .cockpit-icon { background: linear-gradient(135deg, var(--green), var(--primary)); }
-.tone-warn .cockpit-icon { background: linear-gradient(135deg, var(--amber), #f97316); }
-.tone-blue .cockpit-icon { background: linear-gradient(135deg, var(--primary), var(--cyan)); }
-.tone-cyan .cockpit-icon { background: linear-gradient(135deg, var(--cyan), var(--green)); }
-.tone-violet .cockpit-icon { background: linear-gradient(135deg, var(--violet), var(--primary)); }
-.tone-amber .cockpit-icon { background: linear-gradient(135deg, var(--amber), var(--primary)); }
-.tone-green .cockpit-icon { background: linear-gradient(135deg, var(--green), var(--cyan)); }
-.tone-slate .cockpit-icon { background: linear-gradient(135deg, #334155, #475569); }
-
 .dashboard-panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -768,8 +713,12 @@ button, input, textarea { font: inherit; }
   box-shadow: var(--shadow-md);
 }
 
-.dashboard-action-tile .cockpit-icon {
+.dashboard-action-tile > span:first-child {
   grid-row: span 2;
+  width: 36px;
+  height: 36px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--cyan));
 }
 
 .dashboard-action-tile strong,
@@ -1454,7 +1403,6 @@ button, input, textarea { font: inherit; }
 .portal-shell.theme-dark .portal-nav-item,
 .portal-shell.theme-dark .portal-theme-button,
 .portal-shell.theme-dark .dashboard-panel,
-.portal-shell.theme-dark .cockpit-card,
 .portal-shell.theme-dark .exam-control-panel,
 .portal-shell.theme-dark .page-hero,
 .portal-shell.theme-dark .data-table-lite,
@@ -2329,7 +2277,6 @@ button, input, textarea { font: inherit; }
 
 @media (max-width: 1180px) {
   .portal-shell { grid-template-columns: 220px minmax(0, 1fr); }
-  .cockpit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-panels { grid-template-columns: 1fr; }
   .exam-chat-page {
     height: auto;
@@ -2424,7 +2371,6 @@ button, input, textarea { font: inherit; }
     max-width: 100%;
   }
 
-  .cockpit-grid,
   .dashboard-panels,
   .knowledge-grid,
   .dictionary-parent-grid,

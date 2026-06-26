@@ -74,7 +74,7 @@ onMounted(() => {
   <main class="portal-shell" :class="`theme-${themeMode}`">
     <aside class="portal-sidebar">
       <div class="portal-brand">
-        <span class="portal-brand-mark"><Sparkles :size="22" /></span>
+        <span class="portal-brand-mark"><Sparkles :size="18" /></span>
         <div>
           <h1>知习台</h1>
           <p>知识学习工作台</p>
@@ -90,7 +90,7 @@ onMounted(() => {
           type="button"
           @click="emit('update:activePage', page.key)"
         >
-          <span><component :is="page.icon" :size="18" /></span>
+          <span><component :is="page.icon" :size="16" /></span>
           <strong>{{ page.label }}</strong>
           <em>{{ page.subLabel }}</em>
         </button>
@@ -131,8 +131,8 @@ onMounted(() => {
             :disabled="authLoading"
             @click="emit('logout')"
           >
-            <LoaderCircle v-if="authLoading" class="spin" :size="18" />
-            <LogOut v-else :size="18" />
+            <LoaderCircle v-if="authLoading" class="spin" :size="16" />
+            <LogOut v-else :size="16" />
           </button>
 
           <button
@@ -142,7 +142,7 @@ onMounted(() => {
             :aria-label="themeMode === 'dark' ? '浅色模式' : '深色模式'"
             @click="toggleTheme"
           >
-            <component :is="themeToggleIcon" :size="18" />
+            <component :is="themeToggleIcon" :size="16" />
           </button>
         </div>
       </div>
