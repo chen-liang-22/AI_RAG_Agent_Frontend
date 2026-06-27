@@ -1,5 +1,13 @@
 import { request } from './http'
-import type { ExamAnswerResponse, ExamHistoryListResponse, ExamSectionsResponse, ExamSessionDetailResponse, ExamStartPayload, ExamStartResponse } from './types'
+import type {
+  ExamAnswerResponse,
+  ExamHistoryListResponse,
+  ExamSectionsResponse,
+  ExamSessionDeleteResponse,
+  ExamSessionDetailResponse,
+  ExamStartPayload,
+  ExamStartResponse,
+} from './types'
 
 export function listExamSections(collectionName?: string | null, documentId?: string | null) { // 查询考试题源目录
   const params = new URLSearchParams()
@@ -35,4 +43,10 @@ export function listExamSessions(page = 1, pageSize = 10, userId?: string, keywo
 
 export function getExamSessionDetail(sessionId: string) { // 查询考试详情
   return request<ExamSessionDetailResponse>(`/exam/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function deleteExamSession(sessionId: string) { // 删除考试历史记录
+  return request<ExamSessionDeleteResponse>(`/exam/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  })
 }

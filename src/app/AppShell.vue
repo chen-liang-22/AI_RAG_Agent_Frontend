@@ -2,13 +2,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { DatabaseZap, LoaderCircle, LogOut, Moon, RefreshCw, ShieldCheck, Sparkles, Sun } from 'lucide-vue-next'
 import { fetchHealth, type AuthUser, type HealthResponse } from '../shared/api'
-import { portalPages, type MainPage, type ThemeMode } from './navigation'
+import { portalPages, type MainPage, type PortalMenuItem, type ThemeMode } from './navigation'
+import PortalNavTree from './PortalNavTree.vue'
 
 const props = defineProps<{
   themeMode: ThemeMode
   activePage: MainPage
   authLoading: boolean
   currentUser: AuthUser
+  menus?: PortalMenuItem[]
 }>()
 
 const emit = defineEmits<{
@@ -21,9 +23,25 @@ const themeToggleIcon = computed(() => (props.themeMode === 'dark' ? Sun : Moon)
 const health = ref<HealthResponse | null>(null)
 const healthLoading = ref(false)
 const healthError = ref('')
+const navigationMenus = computed(() => props.menus?.length ? props.menus : portalPages)
 const currentUserInitial = computed(() => {
   const displayName = props.currentUser.display_name || props.currentUser.username || 'U'
   return displayName.slice(0, 1).toUpperCase()
+})
+const activeMenuKeys = computed(() => {
+  // 父级目录在任一子页面激活时也要保持高亮。
+  const keys = new Set<string>()
+  const visit = (items: PortalMenuItem[], parent?: PortalMenuItem) => {
+    for (const item of items) {
+      if (item.pageKey === props.activePage) {
+        keys.add(item.key)
+        if (parent) keys.add(parent.key)
+      }
+      visit(item.children, item)
+    }
+  }
+  visit(navigationMenus.value)
+  return keys
 })
 const healthTone = computed(() => {
   if (healthLoading.value) return 'loading'
@@ -43,6 +61,11 @@ const healthIcon = computed(() => (health.value?.qdrant === 'ok' ? DatabaseZap :
 
 function toggleTheme() {
   emit('update:themeMode', props.themeMode === 'dark' ? 'light' : 'dark')
+}
+
+function openMenu(item: PortalMenuItem) {
+  if (!item.pageKey) return
+  emit('update:activePage', item.pageKey)
 }
 
 function statusLabel(status?: string) {
@@ -82,18 +105,12 @@ onMounted(() => {
       </div>
 
       <nav class="portal-nav" aria-label="主页面导航">
-        <button
-          v-for="page in portalPages"
-          :key="page.key"
-          class="portal-nav-item"
-          :class="{ active: activePage === page.key }"
-          type="button"
-          @click="emit('update:activePage', page.key)"
-        >
-          <span><component :is="page.icon" :size="16" /></span>
-          <strong>{{ page.label }}</strong>
-          <em>{{ page.subLabel }}</em>
-        </button>
+        <PortalNavTree
+          :items="navigationMenus"
+          :active-page="activePage"
+          :active-keys="activeMenuKeys"
+          @open="openMenu"
+        />
       </nav>
 
     </aside>

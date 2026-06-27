@@ -1,4 +1,5 @@
 // 销售训练展示工具：只放纯函数，避免页面和组件重复维护格式化逻辑。
+import type { TrainingKnowledgeBatchResponse } from '../shared/api'
 
 export const PROFILE_PREVIEW_LIMIT = 20
 
@@ -99,4 +100,13 @@ export function uniqueList(items: string[]): string[] {
 
 export function displayOptionLabel(value: string, options: Record<string, string>): string {
   return options[value] || value
+}
+
+export function sortTrainingBatchesByImportTime(items: TrainingKnowledgeBatchResponse[]) {
+  // 资料管理按导入时间倒序展示；后端若排序调整，前端仍用 created_at 兜底保证页面顺序稳定。
+  return [...items].sort((left, right) => {
+    const rightTime = new Date(right.created_at || right.updated_at || '').getTime() || 0
+    const leftTime = new Date(left.created_at || left.updated_at || '').getTime() || 0
+    return rightTime - leftTime
+  })
 }

@@ -104,13 +104,31 @@ function generateUserId(excludeUserId?: string) { // 生成一个用户 ID
   return source[Math.floor(Math.random() * source.length)] // 从候选池中随机取一个
 }
 
-function welcomeMessage(userId: string): ChatMessage { // 创建欢迎消息
-  // 每次新会话都会放入一条助手欢迎消息，顺便把当前 userId 展示给用户。
+function resolveUserDisplayName(currentUser?: AuthUser | null) { // 读取当前用户展示名称
+  // 页面只展示用户名称，不暴露后端 user_id；请求参数仍使用真实 user_id 保证会话归属准确。
+  const displayName = currentUser?.display_name?.trim()
+  if (displayName) return displayName
+
+  const username = currentUser?.username?.trim()
+  if (username) return username
+
+  return '当前用户'
+}
+
+function welcomeMessage(userDisplayName: string): ChatMessage { // 创建欢迎消息
+  // 每次新会话都会放入一条助手欢迎消息，顺便把当前用户名称展示给用户。
   return { // 返回一条助手消息对象
     id: Date.now(), // 用当前时间戳作为消息 ID
     role: 'assistant', // 欢迎语由助手发出
-    content: `你好，我是扫地/扫拖机器人智能客服。当前用户 ID：${userId}。可以问我选购、故障、保养和个人使用报告。`, // 欢迎语正文
+    content: `你好，我是扫地/扫拖机器人智能客服。当前用户：${userDisplayName}。可以问我选购、故障、保养和个人使用报告。`, // 欢迎语正文
   }
+}
+
+function isWelcomeMessage(message?: ChatMessage) { // 判断当前消息是否是默认欢迎语
+  // 用户名异步刷新或热更新后，只替换系统生成的欢迎语，避免误改真实聊天内容。
+  return message?.role === 'assistant'
+    && message.content.includes('扫地/扫拖机器人智能客服')
+    && (message.content.includes('当前用户') || message.content.includes('当前用户 ID'))
 }
 
 const input = ref('') // 输入框内容
@@ -189,18 +207,26 @@ const selectedUploadCollection = ref('agent') // 当前上传文件将写入的 
 // userId 会随每次请求传给后端。
 // 已登录时优先使用后端登录用户 ID；没有登录用户时才用随机 ID 做开发兜底。
 const userId = ref(props.currentUser?.user_id || generateUserId()) // 当前会话用户 ID
+const userDisplayName = computed(() => resolveUserDisplayName(props.currentUser)) // 当前页面展示的用户名称
 const conversationId = ref<string | null>(null) // 当前后端会话 ID；首轮为空，由后端创建
 const health = ref<HealthResponse | null>(null) // 后端健康状态，初始为空
 
 // messages 是页面聊天记录。
 // 注意：流式输出时必须通过 messages.value[index] 更新消息，
 // 这样 Vue 才能追踪到 content 的变化并立即重新渲染。
-const messages = ref<ChatMessage[]>([welcomeMessage(userId.value)]) // 页面消息列表，初始放一条欢迎消息
+const messages = ref<ChatMessage[]>([welcomeMessage(userDisplayName.value)]) // 页面消息列表，初始放一条欢迎消息
 const messageList = ref<HTMLElement | null>(null) // 消息列表 DOM 引用，用于滚动到底部
 
 // abortController 保存当前请求的取消控制器。
 // 用户点击“停止”时，会调用 abortController.abort() 中断 fetch。
 const abortController = ref<AbortController | null>(null) // 当前请求的取消控制器
+
+function syncWelcomeMessageDisplayName() { // 同步欢迎语中的用户展示名称
+  // 只有没有后端会话、且当前页面仍停留在默认欢迎状态时才重建欢迎语。
+  if (conversationId.value || messages.value.length !== 1 || !isWelcomeMessage(messages.value[0])) return
+
+  messages.value = [welcomeMessage(userDisplayName.value)]
+}
 
 function readInitialThemeMode(): ThemeMode { // 读取本地保存的主题，没有保存时使用深色
   if (typeof window === 'undefined') return 'dark' // 构建阶段没有 window，兜底深色
@@ -237,11 +263,13 @@ watch(
     if (!nextUserId || nextUserId === userId.value) return
 
     userId.value = nextUserId
-    if (!conversationId.value) {
-      messages.value = [welcomeMessage(userId.value)]
-    }
+    syncWelcomeMessageDisplayName()
   },
 )
+
+watch(userDisplayName, () => { // 登录用户名称加载、变化或热更新后刷新默认欢迎语
+  syncWelcomeMessageDisplayName()
+}, { immediate: true })
 
 watch(knowledgeKeyword, () => { // 知识库名称搜索变化时回到第一页
   knowledgePage.value = 1
@@ -754,7 +782,7 @@ async function handleDeleteConversation(conversation: ConversationSummaryRespons
 
     if (conversationId.value === conversation.conversation_id) {
       conversationId.value = null // 当前聊天区会话被删后，下一次发送让后端创建新会话
-      messages.value = [welcomeMessage(userId.value)] // 页面也回到新会话欢迎状态
+      messages.value = [welcomeMessage(userDisplayName.value)] // 页面也回到新会话欢迎状态
       input.value = '' // 清空输入，避免继续沿用旧上下文
       await scrollToBottom() // 刷新聊天区滚动位置
     }
@@ -791,7 +819,7 @@ async function continueConversation() { // 从聊天记录继续当前会话
     })) // 把数据库消息转换成主聊天区消息
 
   if (messages.value.length === 0) {
-    messages.value = [welcomeMessage(userId.value)] // 极端情况下没有消息，兜底展示欢迎语
+    messages.value = [welcomeMessage(userDisplayName.value)] // 极端情况下没有消息，兜底展示欢迎语
   }
 
   conversationDialogVisible.value = false // 关闭聊天记录弹窗
@@ -981,7 +1009,7 @@ function stopGenerating() { // 停止当前生成
 
 async function clearConversation() { // 清空当前对话
   const confirmed = await confirmDangerOnce(
-    '确定清空当前页面对话吗？页面消息会被重置，并切换新的用户 ID。',
+    '确定清空当前页面对话吗？页面消息会被重置，并重新开始当前用户会话。',
     '清空当前对话',
     '清空对话',
   )
@@ -994,9 +1022,9 @@ async function clearConversation() { // 清空当前对话
 
   userId.value = props.currentUser?.user_id || generateUserId(userId.value) // 登录后保持真实用户 ID，未登录兜底才换随机 ID
   conversationId.value = null // 清空后让后端创建新 conversation_id
-  messages.value = [welcomeMessage(userId.value)] // 重置消息列表，只保留欢迎语
+  messages.value = [welcomeMessage(userDisplayName.value)] // 重置消息列表，只保留欢迎语
   input.value = '' // 清空输入框
-  ElMessage.success(`已清空对话，当前用户 ID：${userId.value}`) // 显示成功提示
+  ElMessage.success(`已清空对话，当前用户：${userDisplayName.value}`) // 显示成功提示
   void scrollToBottom() // 滚动到底部；void 表示不用等待这个 Promise
 }
 
@@ -1147,8 +1175,8 @@ onMounted(() => { // Vue 组件挂载完成后执行
             <span class="status-chip">{{ dictionaryItems('model_mode').find((item) => item.item_code === modelMode)?.item_name || '默认' }}</span>
           </div>
           <div class="status-row">
-            <span>用户 ID</span>
-            <span class="status-chip">{{ userId }}</span>
+            <span>用户</span>
+            <span class="status-chip">{{ userDisplayName }}</span>
           </div>
           <div class="status-row">
             <span>会话 ID</span>

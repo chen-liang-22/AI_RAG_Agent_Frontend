@@ -15,10 +15,12 @@ import {
   Send,
   Sparkles,
   Target,
+  Trash2,
 } from 'lucide-vue-next'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   answerExamSession,
+  deleteExamSession,
   getExamSessionDetail,
   listExamSections,
   listExamSessions,
@@ -54,6 +56,7 @@ const starting = ref(false)
 const submitting = ref(false)
 const loadingHistory = ref(false)
 const loadingDetail = ref(false)
+const deletingHistoryId = ref('')
 
 // 题源和历史列表数据：知识文件决定可选向量库/文件，目录只展示第一层目录。
 const knowledgeFiles = ref<KnowledgeFileResponse[]>([])
@@ -72,7 +75,6 @@ const selectedSectionPath = ref('')
 const userId = ref('exam-user')
 const roundCount = ref(5)
 const modelMode = ref<ModelMode>('high')
-const randomSeed = ref<number | null>(null)
 const selectedQuestionTypes = ref<ExamQuestionType[]>([
   'single_choice',
   'multiple_choice',
@@ -153,6 +155,11 @@ async function refreshHistory() {
     const response = await listExamSessions(historyPage.value, 10, userId.value, historyKeyword.value)
     histories.value = response.items
     historyTotal.value = response.total
+    const maxPage = Math.max(1, Math.ceil(response.total / 10))
+    if (historyPage.value > maxPage) {
+      historyPage.value = maxPage
+      await refreshHistory()
+    }
   } finally {
     loadingHistory.value = false
   }
@@ -228,7 +235,6 @@ async function startExam() {
       round_count: roundCount.value,
       question_types: selectedQuestionTypes.value,
       model_mode: modelMode.value,
-      seed: randomSeed.value,
     })
     // 新会话开始后重建聊天窗口，只保留本场考试的消息。
     activeSession.value = response.session
@@ -344,6 +350,40 @@ async function openHistoryDetail(session: ExamSessionSummary) {
   }
 }
 
+// 删除历史记录时同步清理后端会话和题目，避免列表只做前端假删除。
+async function deleteHistory(session: ExamSessionSummary) {
+  try {
+    await ElMessageBox.confirm(`确认删除《${session.title}》吗？删除后考试题目和作答明细都会移除。`, '删除考试记录', {
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+
+  deletingHistoryId.value = session.session_id
+  try {
+    await deleteExamSession(session.session_id)
+    if (activeSession.value?.session_id === session.session_id) {
+      activeSession.value = null
+      currentQuestion.value = null
+      messages.value = []
+      resetAnswerState()
+    }
+    if (selectedDetail.value?.session.session_id === session.session_id) {
+      selectedDetail.value = null
+      detailVisible.value = false
+    }
+    ElMessage.success('考试记录已删除')
+    await refreshHistory()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '考试记录删除失败')
+  } finally {
+    deletingHistoryId.value = ''
+  }
+}
+
 // 切换文件时同步向量库，并重新读取该文件下的一级目录。
 watch(selectedDocumentId, () => {
   if (selectedDocument.value?.collection_name) {
@@ -420,16 +460,10 @@ onMounted(async () => {
           </el-select>
         </label>
 
-        <div class="exam-control-grid">
-          <label>
-            <span>轮数</span>
-            <el-input-number v-model="roundCount" :min="1" :max="50" />
-          </label>
-          <label>
-            <span>随机种子</span>
-            <el-input-number v-model="randomSeed" :min="1" :max="999999" placeholder="可不填" />
-          </label>
-        </div>
+        <label>
+          <span>轮数</span>
+          <el-input-number v-model="roundCount" :min="1" :max="50" />
+        </label>
         <label>
           <span>分析模型</span>
           <el-select v-model="modelMode">
@@ -438,7 +472,7 @@ onMounted(async () => {
             <el-option label="低延迟" value="low" />
           </el-select>
         </label>
-        <label>
+        <label class="question-type-field">
           <span>题型</span>
           <el-checkbox-group v-model="selectedQuestionTypes" class="question-type-grid">
             <el-checkbox-button v-for="item in questionTypeOptions" :key="item.value" :value="item.value">
@@ -524,11 +558,21 @@ onMounted(async () => {
         </div>
         <el-input v-model="historyKeyword" placeholder="搜索文件/目录" clearable @change="refreshHistory" />
         <div class="exam-history-list" v-loading="loadingHistory">
-          <button v-for="item in histories" :key="item.session_id" type="button" @click="openHistoryDetail(item)">
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.filename || item.collection_name }}</span>
-            <em>{{ item.total_score.toFixed(1) }}/100 · {{ item.answered_count }}/{{ item.round_count }}</em>
-          </button>
+          <article v-for="item in histories" :key="item.session_id" class="exam-history-item">
+            <button type="button" class="exam-history-main" @click="openHistoryDetail(item)">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.filename || item.collection_name }}</span>
+              <em>{{ item.total_score.toFixed(1) }}/100 · {{ item.answered_count }}/{{ item.round_count }}</em>
+            </button>
+            <el-button
+              circle
+              plain
+              type="danger"
+              :icon="Trash2"
+              :loading="deletingHistoryId === item.session_id"
+              @click.stop="deleteHistory(item)"
+            />
+          </article>
           <div v-if="histories.length === 0" class="empty-history">暂无考试记录</div>
         </div>
         <el-pagination

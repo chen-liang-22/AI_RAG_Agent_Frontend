@@ -83,10 +83,12 @@ import {
   hasDisplayValue,
   objectEntries,
   safeList,
+  sortTrainingBatchesByImportTime,
   uniqueList,
   valueList,
 } from '../../utils/trainingDisplay'
 import TrainingKnowledgeWorkspace from '../../components/sales-training/TrainingKnowledgeWorkspace.vue'
+import TrainingKnowledgeUploadPanel from '../../components/sales-training/TrainingKnowledgeUploadPanel.vue'
 import TrainingReviewWorkspace from '../../components/sales-training/TrainingReviewWorkspace.vue'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
@@ -226,6 +228,7 @@ const versionLoading = ref(false)
 const batchVersions = ref<TrainingKnowledgeBatchResponse[]>([])
 const activeVersionGroupId = ref('')
 const activeChunkSummary = ref<ChunkTypeSummary | null>(null)
+const chunkStructureVisible = ref(false)
 const chunkDetailVisible = ref(false)
 const previewingBatchId = ref('')
 const deletingBatchId = ref('')
@@ -395,6 +398,7 @@ const trainingReadinessPercent = computed(() => {
   ].filter(Boolean).length
   return Math.round((readyItems / 5) * 100)
 })
+
 const nextTrainingAction = computed<TrainingNextAction>(() => {
   if (batchTotal.value === 0) {
     return {
@@ -2001,18 +2005,21 @@ async function openBatchVersions(batch: TrainingKnowledgeBatchResponse) {
 async function refreshTrainingBatches() {
   loadingBatches.value = true
   try {
-    // 资料管理左侧列表只展示未删除批次，后端按更新时间倒序分页。
-    const response = await listTrainingKnowledgeBatches(batchPage.value, 6)
+    // 资料管理每页展示 3 列 x 3 行，按导入时间倒序排列。
+    const response = await listTrainingKnowledgeBatches(batchPage.value, 9)
     // 删除最后一页最后一条数据后，当前页可能为空；这里自动回退一页。
     if (response.items.length === 0 && response.total > 0 && batchPage.value > 1) {
       batchPage.value -= 1
       await refreshTrainingBatches()
       return
     }
-    trainingBatches.value = response.items
+    const sortedItems = sortTrainingBatchesByImportTime(response.items)
+    trainingBatches.value = sortedItems
     batchTotal.value = response.total
-    if (!activeBatchId.value && response.items.length) {
-      await openTrainingBatch(response.items[0])
+    if (activeBatchId.value && !sortedItems.some((item) => item.batch_id === activeBatchId.value)) {
+      activeBatchId.value = ''
+      chunks.value = []
+      activeChunkSummary.value = null
     }
   } catch (error) {
     ElMessage.warning(error instanceof Error ? error.message : '训练资料列表读取失败')
@@ -2024,6 +2031,7 @@ async function refreshTrainingBatches() {
 async function openTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
   // 点击某个批次时，只切换当前批次和切片列表，不会重新解析文件。
   activeBatchId.value = batch.batch_id
+  chunkStructureVisible.value = true
   loadingChunks.value = true
   try {
     const response = await listTrainingKnowledgeChunks(batch.batch_id)
@@ -2033,6 +2041,15 @@ async function openTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
   } finally {
     loadingChunks.value = false
   }
+}
+
+function closeChunkStructure() {
+  // 关闭切片结构弹窗时清理当前批次，避免资料管理首页被“查看”状态继续撑开。
+  chunkStructureVisible.value = false
+  activeBatchId.value = ''
+  chunks.value = []
+  activeChunkSummary.value = null
+  chunkDetailVisible.value = false
 }
 
 async function previewTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
@@ -2459,7 +2476,34 @@ onMounted(() => {
 
     <section class="training-console-layout">
       <aside class="training-workspace-rail">
-        <section class="training-next-card compact">
+        <TrainingKnowledgeUploadPanel
+          v-if="activeWorkspaceTab === 'knowledge'"
+          :selected-file="selectedFile"
+          :upload-result="uploadResult"
+          :uploading="uploading"
+          :upload-help-description="uploadHelpDescription"
+          :current-upload-chunk-count="currentUploadChunkCount"
+          :current-upload-point-count="currentUploadPointCount"
+          :current-upload-status="currentUploadStatus"
+          :current-upload-duplicate-text="currentUploadDuplicateText"
+          :can-clear-upload-area="canClearUploadArea"
+          :upload-quality-report="uploadQualityReport"
+          :upload-quality-warnings="uploadQualityWarnings"
+          :upload-quality-metrics="uploadQualityMetrics"
+          :upload-quality-split-text="uploadQualitySplitText"
+          :upload-publish-validation="uploadPublishValidation"
+          :publishing-batch-id="publishingBatchId"
+          :reparsing-batch-id="reparsingBatchId"
+          :quality-level-label="qualityLevelLabel"
+          :quality-level-class="qualityLevelClass"
+          @file-change="onFileChange"
+          @clear-upload="clearUploadArea"
+          @upload="uploadKnowledge"
+          @publish-batch="publishTrainingBatch"
+          @reparse-batch="reparseTrainingBatch"
+        />
+
+        <section v-else class="training-next-card compact">
           <div class="next-card-header">
             <span><Sparkles :size="16" /> 下一步</span>
             <em>{{ trainingReadinessPercent }}%</em>
@@ -2498,11 +2542,10 @@ onMounted(() => {
     <TrainingKnowledgeWorkspace
       v-show="activeWorkspaceTab === 'knowledge'"
       v-model:batch-page="batchPage"
+      v-model:chunk-structure-visible="chunkStructureVisible"
       v-model:chunk-detail-visible="chunkDetailVisible"
       v-model:version-dialog-visible="versionDialogVisible"
       v-model:training-preview-visible="trainingPreviewVisible"
-      :selected-file="selectedFile"
-      :upload-result="uploadResult"
       :training-batches="trainingBatches"
       :batch-total="batchTotal"
       :active-batch-id="activeBatchId"
@@ -2514,35 +2557,18 @@ onMounted(() => {
       :training-preview="trainingPreview"
       :loading-batches="loadingBatches"
       :loading-chunks="loadingChunks"
-      :uploading="uploading"
       :publishing-batch-id="publishingBatchId"
       :rolling-back-batch-id="rollingBackBatchId"
       :reparsing-batch-id="reparsingBatchId"
       :previewing-batch-id="previewingBatchId"
       :deleting-batch-id="deletingBatchId"
       :version-loading="versionLoading"
-      :upload-help-description="uploadHelpDescription"
-      :current-upload-chunk-count="currentUploadChunkCount"
-      :current-upload-point-count="currentUploadPointCount"
-      :current-upload-status="currentUploadStatus"
-      :current-upload-duplicate-text="currentUploadDuplicateText"
-      :can-clear-upload-area="canClearUploadArea"
-      :upload-quality-report="uploadQualityReport"
-      :upload-quality-warnings="uploadQualityWarnings"
-      :upload-quality-metrics="uploadQualityMetrics"
-      :upload-quality-split-text="uploadQualitySplitText"
-      :upload-publish-validation="uploadPublishValidation"
       :format-time="formatTime"
       :batch-status-label="batchStatusLabel"
-      :quality-level-label="qualityLevelLabel"
-      :quality-level-class="qualityLevelClass"
       :chunk-summary-title="chunkSummaryTitle"
       :chunk-usage-label="chunkUsageLabel"
       :case-part-label="casePartLabel"
       :chunk-detail-meta="chunkDetailMeta"
-      @file-change="onFileChange"
-      @clear-upload="clearUploadArea"
-      @upload="uploadKnowledge"
       @refresh-batches="refreshTrainingBatches"
       @publish-batch="publishTrainingBatch"
       @reparse-batch="reparseTrainingBatch"
@@ -2552,6 +2578,7 @@ onMounted(() => {
       @preview-batch="previewTrainingBatch"
       @delete-batch="deleteTrainingBatch"
       @open-chunk-summary="openChunkSummaryDetail"
+      @close-chunk-structure="closeChunkStructure"
     />
 
     <section
@@ -3796,7 +3823,11 @@ onMounted(() => {
 <style scoped>
 .sales-training-page {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sales-training-hero {
@@ -3807,20 +3838,26 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .training-workspace-rail {
-  position: sticky;
-  top: 14px;
   display: grid;
+  align-content: start;
   gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .training-workspace-stage {
   display: grid;
   gap: 12px;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .training-next-card {
@@ -3944,7 +3981,9 @@ onMounted(() => {
 
 .training-workspace-nav {
   display: grid;
+  align-content: start;
   gap: 8px;
+  min-height: 0;
   border: 1px solid color-mix(in srgb, var(--line) 82%, var(--cyan) 16%);
   border-radius: 8px;
   padding: 8px;
@@ -4128,7 +4167,9 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(230px, 290px) minmax(720px, 1fr) minmax(360px, 420px);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .training-workspace.plan-step-workspace {
@@ -4145,17 +4186,17 @@ onMounted(() => {
   display: grid;
   align-content: start;
   gap: 12px;
+  min-height: 0;
   min-width: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 @media (min-width: 1321px) {
   .training-left-panel,
   .training-right-panel {
-    position: sticky;
-    top: 12px;
-    max-height: calc(100vh - 24px);
+    max-height: none;
     overflow-y: auto;
-    padding-right: 2px;
     scrollbar-gutter: stable;
   }
 }
@@ -4479,6 +4520,10 @@ onMounted(() => {
 }
 
 :deep(.profile-config-dialog .el-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
   border: 1px solid color-mix(in srgb, var(--line) 72%, var(--cyan) 18%);
   border-radius: 8px;
   background:
@@ -4488,6 +4533,7 @@ onMounted(() => {
 }
 
 :deep(.profile-config-dialog .el-dialog__header) {
+  flex: 0 0 auto;
   margin: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   padding: 18px 20px;
@@ -4500,10 +4546,14 @@ onMounted(() => {
 }
 
 :deep(.profile-config-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   padding: 18px 20px;
 }
 
 :deep(.profile-config-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
   border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   padding: 14px 20px 18px;
 }
@@ -5876,7 +5926,9 @@ onMounted(() => {
   grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) minmax(280px, 360px);
   gap: 14px;
   align-items: stretch;
-  min-height: calc(100vh - 280px);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .training-chat-side,
@@ -5884,12 +5936,15 @@ onMounted(() => {
   display: grid;
   align-content: start;
   gap: 12px;
+  min-height: 0;
   min-width: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .training-chat-shell.focused {
-  min-height: calc(100vh - 280px);
-  height: calc(100vh - 280px);
+  min-height: 0;
+  height: 100%;
 }
 
 .chat-role-card {
@@ -6002,8 +6057,8 @@ onMounted(() => {
 
 .training-chat-shell {
   display: grid;
-  grid-template-rows: auto minmax(360px, 1fr) auto;
-  min-height: 580px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
 }
 
 .training-chat-header {
@@ -6213,9 +6268,10 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1180px) {
   .training-console-layout {
     grid-template-columns: 1fr;
+    overflow: auto;
   }
 
   .training-workspace-rail {
@@ -6241,8 +6297,8 @@ onMounted(() => {
   }
 
   .training-chat-shell.focused {
-    height: auto;
-    min-height: 720px;
+    height: 100%;
+    min-height: 0;
   }
 
   .training-right-panel {
