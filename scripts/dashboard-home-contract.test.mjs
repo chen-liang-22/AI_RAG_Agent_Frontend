@@ -4,6 +4,7 @@ import { join } from 'node:path'
 const root = process.cwd()
 const homeSource = readFileSync(join(root, 'src/features/dashboard/HomePage.vue'), 'utf8')
 const appShellSource = readFileSync(join(root, 'src/app/AppShell.vue'), 'utf8')
+const navTreeSource = readFileSync(join(root, 'src/app/PortalNavTree.vue'), 'utf8')
 const styleSource = readFileSync(join(root, 'src/style.css'), 'utf8')
 
 const forbiddenHomeFragments = [
@@ -70,14 +71,14 @@ assertRuleIncludes(styleSource, '.portal-nav-item', 'min-height: 62px')
 assertRuleIncludes(styleSource, '.portal-nav-item span', 'width: 32px')
 assertRuleIncludes(styleSource, '.portal-health-button.tone-good', 'box-shadow: 0 0 24px')
 assertRuleIncludes(styleSource, '.page-hero', 'padding: 10px 14px')
-assertRuleIncludes(homeSource, '.sales-cockpit', 'padding: 18px 20px')
+assertRuleIncludes(homeSource, '.sales-cockpit', 'padding: 16px 18px')
 assertRuleIncludes(homeSource, '.sales-stat-card > span', 'width: 32px')
 
 assertIncludes(homeSource, 'sales-stat-card', '首页销售训练概览卡片被误删')
 assertIncludes(homeSource, ':size="16"', '首页紧凑图标尺寸未生效')
 assertIncludes(homeSource, ':size="14"', '首页页眉小图标尺寸未生效')
 assertIncludes(appShellSource, '<Sparkles :size="18" />', '侧栏品牌图标尺寸未缩小')
-assertIncludes(appShellSource, '<component :is="page.icon" :size="16" />', '侧栏导航图标尺寸未缩小')
+assertIncludes(navTreeSource, '<component :is="item.icon" :size="16" />', '侧栏导航图标尺寸未缩小')
 assertIncludes(appShellSource, '<LogOut v-else :size="16" />', '顶栏退出图标尺寸未缩小')
 assertIncludes(appShellSource, '<component :is="themeToggleIcon" :size="16" />', '顶栏主题图标尺寸未缩小')
 

@@ -817,6 +817,28 @@ button, input, textarea { font: inherit; }
   min-height: 0;
 }
 
+.system-table.el-table td.el-table-fixed-column--right,
+.system-table.el-table .el-table__cell.el-table-fixed-column--right {
+  background-color: var(--el-table-tr-bg-color);
+}
+
+.system-table.el-table th.el-table-fixed-column--right,
+.system-table.el-table th.el-table__cell.el-table-fixed-column--right {
+  background-color: var(--el-table-header-bg-color);
+}
+
+.system-table.el-table .el-table__row:hover > td.el-table-fixed-column--right {
+  background-color: var(--el-table-row-hover-bg-color);
+}
+
+.system-table-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .page-hero {
   position: relative;
   display: flex;

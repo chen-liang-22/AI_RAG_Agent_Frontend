@@ -339,9 +339,17 @@ onMounted(() => {
             <el-tag :type="row.built_in ? 'warning' : 'primary'" effect="plain">{{ row.built_in ? '内置' : '自定义' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="说明" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
-        <el-table-column label="操作" width="400" fixed="right">
+        <el-table-column prop="description" label="说明" min-width="260" show-overflow-tooltip>
+          <template #default="{ row }: { row: SystemRoleResponse }">
+            <span class="system-table-ellipsis">{{ row.description || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="updated_at" label="更新时间" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }: { row: SystemRoleResponse }">
+            <span class="system-table-ellipsis">{{ row.updated_at }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="360" fixed="right">
           <template #default="{ row }: { row: SystemRoleResponse }">
             <div class="system-row-actions">
               <el-button :icon="Edit3" size="small" plain @click="openEditDialog(row)">编辑</el-button>
