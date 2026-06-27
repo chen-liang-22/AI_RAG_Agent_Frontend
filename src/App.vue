@@ -31,6 +31,18 @@ const authLoading = ref(false)
 const authError = ref('')
 const currentUser = ref<AuthUser | null>(null)
 const portalMenus = ref<PortalMenuItem[]>([])
+const allowedPages = computed(() => {
+  const pages = new Set<MainPage>()
+  const visit = (items: PortalMenuItem[]) => {
+    for (const item of items) {
+      if (item.pageKey) pages.add(item.pageKey)
+      visit(item.children)
+    }
+  }
+  visit(portalMenus.value)
+  return pages
+})
+const hasActivePageAccess = computed(() => allowedPages.value.has(activePage.value))
 const loginForm = reactive({
   username: 'admin',
   password: '1234qwer',
@@ -184,8 +196,12 @@ onBeforeUnmount(() => {
     :menus="portalMenus"
     @logout="handleLogout"
   >
+    <div v-if="!hasActivePageAccess" class="page-empty-state">
+      <strong>暂无可访问页面</strong>
+      <span>请联系管理员配置菜单权限</span>
+    </div>
     <HomePage
-      v-if="activePage === 'home'"
+      v-else-if="activePage === 'home'"
       :theme-mode="themeMode"
       @open-chat-history="openChatHistory"
       @open-sales-training="openSalesTraining"
@@ -201,7 +217,10 @@ onBeforeUnmount(() => {
     <UserManagementPage v-else-if="activePage === 'userManagement'" :current-user="currentUser" />
     <RoleManagementPage v-else-if="activePage === 'roleManagement'" />
     <MenuManagementPage v-else-if="activePage === 'menuManagement'" />
-    <HomePage v-else :theme-mode="themeMode" @open-chat-history="openChatHistory" @open-sales-training="openSalesTraining" />
+    <div v-else class="page-empty-state">
+      <strong>页面不可访问</strong>
+      <span>当前页面没有匹配的后端菜单</span>
+    </div>
   </AppShell>
 </template>
 

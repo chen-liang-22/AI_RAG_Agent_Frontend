@@ -29,12 +29,17 @@ const forbiddenMenuFallbackFragments = [
   '默认菜单',
   '兜底菜单',
   'props.menus?.length',
+  '<HomePage v-else',
 ]
 
 for (const fragment of forbiddenMenuFallbackFragments) {
   if (appSource.includes(fragment) || appShellSource.includes(fragment) || navigationSource.includes(fragment)) {
     throw new Error(`前端菜单仍存在本地兜底逻辑：${fragment}`)
   }
+}
+
+if (!appSource.includes('hasActivePageAccess')) {
+  throw new Error('App.vue 缺少基于后端菜单的页面访问判断')
 }
 
 console.log('前端应用壳拆分契约检查通过')
