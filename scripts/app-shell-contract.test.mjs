@@ -15,10 +15,25 @@ for (const file of requiredFiles) {
 }
 
 const appSource = readFileSync(join(root, 'src/App.vue'), 'utf8')
+const appShellSource = readFileSync(join(root, 'src/app/AppShell.vue'), 'utf8')
+const navigationSource = readFileSync(join(root, 'src/app/navigation.ts'), 'utf8')
 const forbiddenFragments = ['class="login-card"', 'class="portal-sidebar"']
 for (const fragment of forbiddenFragments) {
   if (appSource.includes(fragment)) {
     throw new Error(`App.vue 仍包含页面壳模板片段：${fragment}`)
+  }
+}
+
+const forbiddenMenuFallbackFragments = [
+  'portalPages',
+  '默认菜单',
+  '兜底菜单',
+  'props.menus?.length',
+]
+
+for (const fragment of forbiddenMenuFallbackFragments) {
+  if (appSource.includes(fragment) || appShellSource.includes(fragment) || navigationSource.includes(fragment)) {
+    throw new Error(`前端菜单仍存在本地兜底逻辑：${fragment}`)
   }
 }
 

@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { DatabaseZap, LoaderCircle, LogOut, Moon, RefreshCw, ShieldCheck, Sparkles, Sun } from 'lucide-vue-next'
 import { fetchHealth, type AuthUser, type HealthResponse } from '../shared/api'
-import { portalPages, type MainPage, type PortalMenuItem, type ThemeMode } from './navigation'
+import { type MainPage, type PortalMenuItem, type ThemeMode } from './navigation'
 import PortalNavTree from './PortalNavTree.vue'
 
 const props = defineProps<{
@@ -23,7 +23,7 @@ const themeToggleIcon = computed(() => (props.themeMode === 'dark' ? Sun : Moon)
 const health = ref<HealthResponse | null>(null)
 const healthLoading = ref(false)
 const healthError = ref('')
-const navigationMenus = computed(() => props.menus?.length ? props.menus : portalPages)
+const navigationMenus = computed(() => props.menus || [])
 const currentUserInitial = computed(() => {
   const displayName = props.currentUser.display_name || props.currentUser.username || 'U'
   return displayName.slice(0, 1).toUpperCase()

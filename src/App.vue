@@ -127,7 +127,7 @@ async function loadPortalMenus() {
     syncActivePageWithMenus(menus)
   } catch (error) {
     portalMenus.value = []
-    ElMessage.warning(error instanceof Error ? error.message : '菜单读取失败，已使用默认菜单')
+    ElMessage.warning(error instanceof Error ? error.message : '菜单读取失败')
   }
 }
 
