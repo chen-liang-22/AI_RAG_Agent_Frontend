@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
@@ -15,23 +15,19 @@ for (const file of featureEntries) {
   }
 }
 
-const pageShells = [
+const retiredCompatibilityEntries = [
+  'src/api.ts',
   'src/pages/HomePage.vue',
   'src/pages/ChatPage.vue',
   'src/pages/SalesTrainingPage.vue',
   'src/pages/ExamPage.vue',
 ]
 
-for (const file of pageShells) {
+for (const file of retiredCompatibilityEntries) {
   const fullPath = join(root, file)
-  const content = readFileSync(fullPath, 'utf8')
-  const size = statSync(fullPath).size
-  if (size > 300) {
-    throw new Error(`pages 兼容壳仍然过大：${file} ${size} 字节`)
-  }
-  if (!content.includes('import FeaturePage') || !content.includes('export default FeaturePage')) {
-    throw new Error(`pages 兼容壳没有直接导出 feature 页面：${file}`)
+  if (existsSync(fullPath)) {
+    throw new Error(`旧前端兼容入口尚未删除：${file}`)
   }
 }
 
-console.log('前端 feature 页面迁移契约检查通过')
+console.log('前端 feature 页面入口和旧兼容入口退场契约检查通过')
