@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 const root = process.cwd()
 const styleSource = readFileSync(join(root, 'src/style.css'), 'utf8')
-const roleSource = readFileSync(join(root, 'src/features/system/RoleManagementPage.vue'), 'utf8')
+const roleSource = readFileSync(join(root, 'src/features/system/pages/RoleManagementPage.vue'), 'utf8')
 
 function assertIncludes(source, expected, message) {
   if (!source.includes(expected)) {

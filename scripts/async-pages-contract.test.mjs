@@ -4,10 +4,13 @@ import { join } from 'node:path'
 const appSource = readFileSync(join(process.cwd(), 'src', 'App.vue'), 'utf8')
 const requiredFragments = [
   'defineAsyncComponent',
-  "import('./features/dashboard/HomePage.vue')",
-  "import('./features/chat/ChatPage.vue')",
-  "import('./features/sales-training/SalesTrainingPage.vue')",
-  "import('./features/exam/ExamPage.vue')",
+  "import('./features/dashboard/pages/HomePage.vue')",
+  "import('./features/chat/pages/ChatPage.vue')",
+  "import('./features/sales-training/pages/SalesTrainingPage.vue')",
+  "import('./features/exam/pages/ExamPage.vue')",
+  "import('./features/system/pages/UserManagementPage.vue')",
+  "import('./features/system/pages/RoleManagementPage.vue')",
+  "import('./features/system/pages/MenuManagementPage.vue')",
 ]
 
 for (const fragment of requiredFragments) {

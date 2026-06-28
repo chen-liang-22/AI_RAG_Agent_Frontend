@@ -3,7 +3,8 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, r
 import { ElMessage } from 'element-plus'
 import AppShell from './app/AppShell.vue'
 import LoginGate from './app/LoginGate.vue'
-import { buildPortalMenus, isMainPage, type MainPage, type PortalMenuItem, type ThemeMode } from './app/navigation'
+import { buildPortalMenus, type MainPage, type PortalMenuItem, type ThemeMode } from './app/navigation'
+import { collectAllowedPagesFromPortalMenus, collectAllowedPagesFromSystemMenus, resolveAccessiblePage } from './app/routeGuard'
 import {
   clearAccessToken,
   listCurrentUserMenus,
@@ -15,13 +16,13 @@ import {
   type SystemMenuResponse,
 } from './shared/api'
 
-const HomePage = defineAsyncComponent(() => import('./features/dashboard/HomePage.vue'))
-const ChatPage = defineAsyncComponent(() => import('./features/chat/ChatPage.vue'))
-const SalesTrainingPage = defineAsyncComponent(() => import('./features/sales-training/SalesTrainingPage.vue'))
-const ExamPage = defineAsyncComponent(() => import('./features/exam/ExamPage.vue'))
-const UserManagementPage = defineAsyncComponent(() => import('./features/system/UserManagementPage.vue'))
-const RoleManagementPage = defineAsyncComponent(() => import('./features/system/RoleManagementPage.vue'))
-const MenuManagementPage = defineAsyncComponent(() => import('./features/system/MenuManagementPage.vue'))
+const HomePage = defineAsyncComponent(() => import('./features/dashboard/pages/HomePage.vue'))
+const ChatPage = defineAsyncComponent(() => import('./features/chat/pages/ChatPage.vue'))
+const SalesTrainingPage = defineAsyncComponent(() => import('./features/sales-training/pages/SalesTrainingPage.vue'))
+const ExamPage = defineAsyncComponent(() => import('./features/exam/pages/ExamPage.vue'))
+const UserManagementPage = defineAsyncComponent(() => import('./features/system/pages/UserManagementPage.vue'))
+const RoleManagementPage = defineAsyncComponent(() => import('./features/system/pages/RoleManagementPage.vue'))
+const MenuManagementPage = defineAsyncComponent(() => import('./features/system/pages/MenuManagementPage.vue'))
 
 const themeMode = ref<ThemeMode>(readInitialThemeMode())
 const activePage = ref<MainPage>('home')
@@ -31,17 +32,7 @@ const authLoading = ref(false)
 const authError = ref('')
 const currentUser = ref<AuthUser | null>(null)
 const portalMenus = ref<PortalMenuItem[]>([])
-const allowedPages = computed(() => {
-  const pages = new Set<MainPage>()
-  const visit = (items: PortalMenuItem[]) => {
-    for (const item of items) {
-      if (item.pageKey) pages.add(item.pageKey)
-      visit(item.children)
-    }
-  }
-  visit(portalMenus.value)
-  return pages
-})
+const allowedPages = computed(() => collectAllowedPagesFromPortalMenus(portalMenus.value))
 const hasActivePageAccess = computed(() => allowedPages.value.has(activePage.value))
 const loginForm = reactive({
   username: 'admin',
@@ -145,17 +136,7 @@ async function loadPortalMenus() {
 
 function syncActivePageWithMenus(menus: SystemMenuResponse[]) {
   // 后端菜单不包含当前页面时切回首页，避免用户留在无权限页面。
-  const allowedPages = new Set<MainPage>()
-  const visit = (items: SystemMenuResponse[]) => {
-    for (const item of items) {
-      if (isMainPage(item.page_key)) allowedPages.add(item.page_key)
-      visit(item.children || [])
-    }
-  }
-  visit(menus)
-  if (allowedPages.size && !allowedPages.has(activePage.value)) {
-    activePage.value = allowedPages.has('home') ? 'home' : Array.from(allowedPages)[0]
-  }
+  activePage.value = resolveAccessiblePage(activePage.value, collectAllowedPagesFromSystemMenus(menus))
 }
 
 watch(themeMode, (nextTheme) => {

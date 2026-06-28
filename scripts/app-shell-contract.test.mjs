@@ -6,6 +6,7 @@ const requiredFiles = [
   'src/app/LoginGate.vue',
   'src/app/AppShell.vue',
   'src/app/navigation.ts',
+  'src/app/routeGuard.ts',
 ]
 
 for (const file of requiredFiles) {

@@ -15,7 +15,7 @@ import {
   type SystemRoleCreatePayload,
   type SystemRoleResponse,
   type SystemRoleUpdatePayload,
-} from '../../shared/api'
+} from '../../../shared/api'
 
 interface RoleFormState { // 角色新增和编辑弹窗表单
   roleCode: string

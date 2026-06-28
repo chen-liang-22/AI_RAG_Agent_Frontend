@@ -1,5 +1,5 @@
 // 销售训练展示工具：只放纯函数，避免页面和组件重复维护格式化逻辑。
-import type { TrainingKnowledgeBatchResponse } from '../shared/api'
+import type { TrainingKnowledgeBatchResponse } from '../types'
 
 export const PROFILE_PREVIEW_LIMIT = 20
 

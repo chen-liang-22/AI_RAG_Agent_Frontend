@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 训练资料上传面板：只承载上传预览 UI，具体上传、发布、重切动作交给父组件处理。
 import { BadgeCheck, CircleHelp, Sparkles, UploadCloud } from 'lucide-vue-next'
-import type { TrainingKnowledgeUploadResponse } from '../../shared/api'
-import { displayValue } from '../../utils/trainingDisplay'
+import type { TrainingKnowledgeUploadResponse } from '../types'
+import { displayValue } from '../composables/trainingDisplay'
 
 const props = defineProps<{
   selectedFile: File | null
@@ -59,10 +59,10 @@ function onFileInputChange(event: Event) {
       <input type="file" accept=".docx,.pdf,.txt" @change="onFileInputChange" />
       <UploadCloud :size="30" />
       <strong>{{ selectedFile?.name || '选择 LMS 案例文件' }}</strong>
-      <span>先生成切片预览和质量报告，确认后写入 sales_training_cases。</span>
+      <span>先生成待发布切片和质量报告，确认后写入 sales_training_cases。</span>
     </div>
     <el-button class="tech-button primary full" :icon="UploadCloud" :loading="uploading" @click="emit('upload')">
-      上传并生成预览
+      上传并生成切片
     </el-button>
     <div v-if="uploadResult" class="training-upload-feedback">
       <div class="training-upload-result" :class="{ duplicated: Boolean(uploadResult.duplicate_of) }">

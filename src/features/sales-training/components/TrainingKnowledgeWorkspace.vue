@@ -13,9 +13,8 @@ import {
 import type {
   TrainingKnowledgeBatchResponse,
   TrainingKnowledgeChunkResponse,
-  TrainingKnowledgePreviewResponse,
-} from '../../shared/api'
-import { displayValue } from '../../utils/trainingDisplay'
+} from '../types'
+import { displayValue } from '../composables/trainingDisplay'
 
 interface ChunkTypeSummary {
   casePart: string
@@ -34,7 +33,6 @@ const props = defineProps<{
   activeChunkSummary: ChunkTypeSummary | null
   batchVersions: TrainingKnowledgeBatchResponse[]
   activeVersionGroupId: string
-  trainingPreview: TrainingKnowledgePreviewResponse | null
   loadingBatches: boolean
   loadingChunks: boolean
   publishingBatchId: string
@@ -55,7 +53,6 @@ const batchPage = defineModel<number>('batchPage', { required: true })
 const chunkStructureVisible = defineModel<boolean>('chunkStructureVisible', { required: true })
 const chunkDetailVisible = defineModel<boolean>('chunkDetailVisible', { required: true })
 const versionDialogVisible = defineModel<boolean>('versionDialogVisible', { required: true })
-const trainingPreviewVisible = defineModel<boolean>('trainingPreviewVisible', { required: true })
 
 const emit = defineEmits<{
   refreshBatches: []
@@ -351,28 +348,6 @@ function handleChunkStructureVisibleChange(visible: boolean) {
       </section>
       <template #footer>
         <el-button @click="versionDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="trainingPreviewVisible"
-      title="训练资料预览"
-      width="960px"
-      class="profile-config-dialog training-preview-dialog"
-      destroy-on-close
-    >
-      <section v-if="trainingPreview" class="training-preview-body">
-        <div class="preview-file-head">
-          <div>
-            <strong>{{ trainingPreview.batch.source_file }}</strong>
-            <span>{{ trainingPreview.batch.chunk_count }} 个切片 · {{ trainingPreview.preview_type }}</span>
-          </div>
-          <em v-if="trainingPreview.truncated">内容较长，已截断展示</em>
-        </div>
-        <pre>{{ trainingPreview.content || '该资料没有解析出可预览文本。' }}</pre>
-      </section>
-      <template #footer>
-        <el-button @click="trainingPreviewVisible = false">关闭</el-button>
       </template>
     </el-dialog>
   </section>

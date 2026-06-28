@@ -34,7 +34,7 @@ import {
   type ExamSessionSummary,
   type KnowledgeFileResponse,
   type ModelMode,
-} from '../../shared/api'
+} from '../../../shared/api'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
 

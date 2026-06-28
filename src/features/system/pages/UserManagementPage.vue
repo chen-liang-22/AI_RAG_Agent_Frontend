@@ -16,7 +16,7 @@ import {
   type SystemUserCreatePayload,
   type SystemUserResponse,
   type SystemUserUpdatePayload,
-} from '../../shared/api'
+} from '../../../shared/api'
 
 const props = defineProps<{
   currentUser: AuthUser

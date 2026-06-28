@@ -42,7 +42,6 @@ import {
   listTrainingKnowledgeBatches,
   listTrainingKnowledgeChunks,
   listTrainingPlans,
-  listTrainingProfileDictionaries,
   listTrainingSessions,
   polishTrainingScenario,
   previewTrainingKnowledgeBatch,
@@ -54,27 +53,31 @@ import {
   submitTrainingTurnStream,
   uploadTrainingKnowledge,
   updateTrainingPlan,
+} from '../api'
+import {
+  listTrainingProfileDictionaries,
   type DictionaryGroupResponse,
   type DictionaryItemResponse,
-  type TrainingGoalSettingResponse,
-  type TrainingKnowledgeBatchResponse,
-  type TrainingKnowledgeChunkResponse,
-  type TrainingKnowledgePreviewResponse,
-  type TrainingKnowledgeUploadResponse,
-  type TrainingPlanDetailResponse,
-  type TrainingPlanSummaryResponse,
-  type TrainingPlanUpdatePayload,
-  type TrainingResponseMode,
-  type TrainingRoleGenerateResponse,
-  type TrainingScoreResponse,
-  type TrainingSessionDetailResponse,
-  type TrainingSessionSummaryResponse,
-  type TrainingSessionResponse,
-  type TrainingSupplementQuestion,
-  type TrainingSupplementQuestionOption,
-  type TrainingTraineeProfilePayload,
-  type TrainingTurnResponse,
-} from '../../shared/api'
+} from '../../../shared/api'
+import type {
+  TrainingGoalSettingResponse,
+  TrainingKnowledgeBatchResponse,
+  TrainingKnowledgeChunkResponse,
+  TrainingKnowledgeUploadResponse,
+  TrainingPlanDetailResponse,
+  TrainingPlanSummaryResponse,
+  TrainingPlanUpdatePayload,
+  TrainingResponseMode,
+  TrainingRoleGenerateResponse,
+  TrainingScoreResponse,
+  TrainingSessionDetailResponse,
+  TrainingSessionSummaryResponse,
+  TrainingSessionResponse,
+  TrainingSupplementQuestion,
+  TrainingSupplementQuestionOption,
+  TrainingTraineeProfilePayload,
+  TrainingTurnResponse,
+} from '../types'
 import {
   asArray,
   compactText,
@@ -86,10 +89,11 @@ import {
   sortTrainingBatchesByImportTime,
   uniqueList,
   valueList,
-} from '../../utils/trainingDisplay'
-import TrainingKnowledgeWorkspace from '../../components/sales-training/TrainingKnowledgeWorkspace.vue'
-import TrainingKnowledgeUploadPanel from '../../components/sales-training/TrainingKnowledgeUploadPanel.vue'
-import TrainingReviewWorkspace from '../../components/sales-training/TrainingReviewWorkspace.vue'
+} from '../composables/trainingDisplay'
+import TrainingKnowledgeWorkspace from '../components/TrainingKnowledgeWorkspace.vue'
+import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadPanel.vue'
+import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
+import { openHttpFilePreview } from '../../../shared/utils/filePreview'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
 
@@ -221,8 +225,6 @@ const batchPage = ref(1)
 const activeBatchId = ref('')
 const loadingBatches = ref(false)
 const loadingChunks = ref(false)
-const trainingPreview = ref<TrainingKnowledgePreviewResponse | null>(null)
-const trainingPreviewVisible = ref(false)
 const versionDialogVisible = ref(false)
 const versionLoading = ref(false)
 const batchVersions = ref<TrainingKnowledgeBatchResponse[]>([])
@@ -1856,7 +1858,7 @@ async function uploadKnowledge() {
     activeBatchId.value = uploadResult.value.batch_id
     // 第四步：异步刷新上传批次列表，不阻塞当前成功提示。
     void refreshTrainingBatches()
-    ElMessage.success(uploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练资料预览已生成，请确认后发布')
+    ElMessage.success(uploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练资料切片已生成，请确认后发布')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练知识上传失败')
   } finally {
@@ -2053,13 +2055,13 @@ function closeChunkStructure() {
 }
 
 async function previewTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
-  // 预览读取的是服务端保存的原文件，再由后端解析成文本；不会重新写向量库。
+  // 预览读取的是 MinIO 中保存的上传原文件；查看切片继续使用单独的切片结构入口。
   previewingBatchId.value = batch.batch_id
   try {
-    trainingPreview.value = await previewTrainingKnowledgeBatch(batch.batch_id)
-    trainingPreviewVisible.value = true
+    const preview = await previewTrainingKnowledgeBatch(batch.batch_id)
+    openHttpFilePreview(preview.file_url, '训练资料预览地址为空，请确认 MinIO 文件是否存在')
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '训练资料预览失败')
+    ElMessage.error(error instanceof Error ? error.message : '预览失败')
   } finally {
     previewingBatchId.value = ''
   }
@@ -2545,7 +2547,6 @@ onMounted(() => {
       v-model:chunk-structure-visible="chunkStructureVisible"
       v-model:chunk-detail-visible="chunkDetailVisible"
       v-model:version-dialog-visible="versionDialogVisible"
-      v-model:training-preview-visible="trainingPreviewVisible"
       :training-batches="trainingBatches"
       :batch-total="batchTotal"
       :active-batch-id="activeBatchId"
@@ -2554,7 +2555,6 @@ onMounted(() => {
       :active-chunk-summary="activeChunkSummary"
       :batch-versions="batchVersions"
       :active-version-group-id="activeVersionGroupId"
-      :training-preview="trainingPreview"
       :loading-batches="loadingBatches"
       :loading-chunks="loadingChunks"
       :publishing-batch-id="publishingBatchId"

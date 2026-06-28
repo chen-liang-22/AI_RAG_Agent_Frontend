@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
-const homeSource = readFileSync(join(root, 'src/features/dashboard/HomePage.vue'), 'utf8')
+const homeSource = readFileSync(join(root, 'src/features/dashboard/pages/HomePage.vue'), 'utf8')
 const appShellSource = readFileSync(join(root, 'src/app/AppShell.vue'), 'utf8')
 const navTreeSource = readFileSync(join(root, 'src/app/PortalNavTree.vue'), 'utf8')
 const styleSource = readFileSync(join(root, 'src/style.css'), 'utf8')

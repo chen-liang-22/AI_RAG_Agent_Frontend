@@ -11,7 +11,7 @@ import {
   updateSystemMenu,
   type SystemMenuPayload,
   type SystemMenuResponse,
-} from '../../shared/api'
+} from '../../../shared/api'
 
 interface MenuFormState { // 菜单新增和编辑弹窗表单
   parentMenuId: string
