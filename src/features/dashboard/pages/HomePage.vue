@@ -1875,6 +1875,7 @@ onMounted(() => {
           v-model:chunk-structure-visible="trainingKnowledgeChunkStructureVisible"
           v-model:chunk-detail-visible="trainingKnowledgeChunkDetailVisible"
           v-model:version-dialog-visible="trainingKnowledgeVersionDialogVisible"
+          v-model:training-preview-visible="trainingKnowledgePreviewVisible"
           :training-batches="trainingBatches"
           :batch-total="trainingKnowledgeBatchTotal"
           :active-batch-id="trainingKnowledgeActiveBatchId"
@@ -1883,6 +1884,9 @@ onMounted(() => {
           :active-chunk-summary="trainingKnowledgeActiveChunkSummary"
           :batch-versions="trainingKnowledgeBatchVersions"
           :active-version-group-id="trainingKnowledgeActiveVersionGroupId"
+          :training-preview="trainingKnowledgePreview"
+          :training-preview-loading="trainingKnowledgePreviewLoading"
+          theme-mode="dark"
           :loading-batches="trainingKnowledgeLoadingBatches"
           :loading-chunks="trainingKnowledgeLoadingChunks"
           :publishing-batch-id="trainingKnowledgePublishingBatchId"
@@ -2132,27 +2136,6 @@ onMounted(() => {
           truncated: knowledgePreview.truncated,
           file_url: knowledgePreview.file_url,
           charset: knowledgePreview.charset,
-        }
-        : null"
-    />
-
-    <FilePreviewDialog
-      v-model="trainingKnowledgePreviewVisible"
-      :loading="trainingKnowledgePreviewLoading"
-      theme-mode="dark"
-      title="训练资料预览"
-      :preview="trainingKnowledgePreview
-        ? {
-          file: {
-            filename: trainingKnowledgePreview.batch.source_file,
-            file_type: trainingKnowledgePreview.batch.source_file?.split('.').pop() || '未知类型',
-            file_size: null,
-          },
-          preview_type: trainingKnowledgePreview.preview_type,
-          content: trainingKnowledgePreview.content,
-          truncated: trainingKnowledgePreview.truncated,
-          file_url: trainingKnowledgePreview.file_url,
-          charset: trainingKnowledgePreview.charset,
         }
         : null"
     />

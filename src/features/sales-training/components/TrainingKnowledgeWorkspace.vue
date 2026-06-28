@@ -37,6 +37,7 @@ const props = defineProps<{
   activeVersionGroupId: string
   trainingPreview: TrainingKnowledgePreviewResponse | null
   trainingPreviewLoading: boolean
+  themeMode?: 'dark' | 'light'
   loadingBatches: boolean
   loadingChunks: boolean
   publishingBatchId: string
@@ -359,6 +360,7 @@ function handleChunkStructureVisibleChange(visible: boolean) {
     <FilePreviewDialog
       v-model="trainingPreviewVisible"
       :loading="trainingPreviewLoading"
+      :theme-mode="themeMode"
       title="训练资料预览"
       :preview="trainingPreview
         ? {

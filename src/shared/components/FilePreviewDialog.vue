@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import { ExternalLink, FileText } from 'lucide-vue-next'
+import { FileText } from 'lucide-vue-next'
 
 interface PreviewFileMeta {
   filename: string
@@ -39,13 +38,6 @@ function formatFileSize(size?: number | null) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-function openExternalPreview() {
-  if (!cleanFileUrl.value) {
-    ElMessage.warning('文件预览地址为空')
-    return
-  }
-  window.open(cleanFileUrl.value, '_blank', 'noopener,noreferrer')
-}
 </script>
 
 <template>
@@ -70,9 +62,6 @@ function openExternalPreview() {
               </span>
             </div>
           </div>
-          <el-button v-if="cleanFileUrl" :icon="ExternalLink" plain @click="openExternalPreview">
-            新窗口
-          </el-button>
         </header>
 
         <div v-if="preview.truncated" class="file-preview-warning">

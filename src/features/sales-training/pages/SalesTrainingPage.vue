@@ -63,6 +63,7 @@ import type {
   TrainingGoalSettingResponse,
   TrainingKnowledgeBatchResponse,
   TrainingKnowledgeChunkResponse,
+  TrainingKnowledgePreviewResponse,
   TrainingKnowledgeUploadResponse,
   TrainingPlanDetailResponse,
   TrainingPlanSummaryResponse,
@@ -93,9 +94,8 @@ import {
 import TrainingKnowledgeWorkspace from '../components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadPanel.vue'
 import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
-import { openHttpFilePreview } from '../../../shared/utils/filePreview'
 
-defineProps<{ themeMode: 'dark' | 'light' }>()
+const props = defineProps<{ themeMode: 'dark' | 'light' }>()
 
 type TrainingWorkspaceTab = 'knowledge' | 'setup' | 'chat' | 'review'
 type SetupFlowTab = 'plan' | 'role' | 'stage' | 'score'
@@ -225,6 +225,9 @@ const batchPage = ref(1)
 const activeBatchId = ref('')
 const loadingBatches = ref(false)
 const loadingChunks = ref(false)
+const trainingPreview = ref<TrainingKnowledgePreviewResponse | null>(null)
+const trainingPreviewVisible = ref(false)
+const trainingPreviewLoading = ref(false)
 const versionDialogVisible = ref(false)
 const versionLoading = ref(false)
 const batchVersions = ref<TrainingKnowledgeBatchResponse[]>([])
@@ -2055,14 +2058,18 @@ function closeChunkStructure() {
 }
 
 async function previewTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
-  // 预览读取的是 MinIO 中保存的上传原文件；查看切片继续使用单独的切片结构入口。
+  // 预览读取的是后端生成的站内预览数据；查看切片继续使用单独的切片结构入口。
   previewingBatchId.value = batch.batch_id
+  trainingPreviewVisible.value = true
+  trainingPreviewLoading.value = true
+  trainingPreview.value = null
   try {
-    const preview = await previewTrainingKnowledgeBatch(batch.batch_id)
-    openHttpFilePreview(preview.file_url, '训练资料预览地址为空，请确认 MinIO 文件是否存在')
+    trainingPreview.value = await previewTrainingKnowledgeBatch(batch.batch_id)
   } catch (error) {
+    trainingPreviewVisible.value = false
     ElMessage.error(error instanceof Error ? error.message : '预览失败')
   } finally {
+    trainingPreviewLoading.value = false
     previewingBatchId.value = ''
   }
 }
@@ -2547,6 +2554,7 @@ onMounted(() => {
       v-model:chunk-structure-visible="chunkStructureVisible"
       v-model:chunk-detail-visible="chunkDetailVisible"
       v-model:version-dialog-visible="versionDialogVisible"
+      v-model:training-preview-visible="trainingPreviewVisible"
       :training-batches="trainingBatches"
       :batch-total="batchTotal"
       :active-batch-id="activeBatchId"
@@ -2555,6 +2563,9 @@ onMounted(() => {
       :active-chunk-summary="activeChunkSummary"
       :batch-versions="batchVersions"
       :active-version-group-id="activeVersionGroupId"
+      :training-preview="trainingPreview"
+      :training-preview-loading="trainingPreviewLoading"
+      :theme-mode="props.themeMode"
       :loading-batches="loadingBatches"
       :loading-chunks="loadingChunks"
       :publishing-batch-id="publishingBatchId"
