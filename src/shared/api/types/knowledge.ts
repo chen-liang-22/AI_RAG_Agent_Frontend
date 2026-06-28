@@ -49,11 +49,12 @@ export interface KnowledgeUploadRecommendResponse { // `/knowledge/upload/recomm
 
 export interface KnowledgeFilePreviewResponse { // `/knowledge/files/{document_id}/preview` 已入库文件预览结构
   document: KnowledgeFileResponse // 被预览的知识库文件元数据
-  preview_type: string // file_url 表示后端返回 MinIO HTTP 地址
-  content: string // 兼容旧弹窗字段；HTTP 预览模式下为空字符串
-  truncated: boolean // HTTP 预览模式下固定为 false
+  preview_type: string // text 表示展示 content，file_url 表示在弹窗内嵌 MinIO HTTP 地址
+  content: string // TXT/DOCX/PDF 等文本预览内容
+  truncated: boolean // 内容是否因 max_chars 被截断
   page_count?: number | null // PDF 页数；TXT 文件为空
-  file_url?: string | null // MinIO HTTP 文件地址，前端用 window.open 直接预览
+  file_url?: string | null // MinIO HTTP 文件地址，前端用于弹窗内嵌或兜底打开
+  charset?: string | null // 文本预览采用的字符集或解析器标识
 }
 
 export interface KnowledgeDeleteResponse { // `/knowledge/files/{document_id}` DELETE 响应结构

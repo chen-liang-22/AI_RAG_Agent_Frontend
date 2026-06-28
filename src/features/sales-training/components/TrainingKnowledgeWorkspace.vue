@@ -13,8 +13,10 @@ import {
 import type {
   TrainingKnowledgeBatchResponse,
   TrainingKnowledgeChunkResponse,
+  TrainingKnowledgePreviewResponse,
 } from '../types'
 import { displayValue } from '../composables/trainingDisplay'
+import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue'
 
 interface ChunkTypeSummary {
   casePart: string
@@ -33,6 +35,8 @@ const props = defineProps<{
   activeChunkSummary: ChunkTypeSummary | null
   batchVersions: TrainingKnowledgeBatchResponse[]
   activeVersionGroupId: string
+  trainingPreview: TrainingKnowledgePreviewResponse | null
+  trainingPreviewLoading: boolean
   loadingBatches: boolean
   loadingChunks: boolean
   publishingBatchId: string
@@ -53,6 +57,7 @@ const batchPage = defineModel<number>('batchPage', { required: true })
 const chunkStructureVisible = defineModel<boolean>('chunkStructureVisible', { required: true })
 const chunkDetailVisible = defineModel<boolean>('chunkDetailVisible', { required: true })
 const versionDialogVisible = defineModel<boolean>('versionDialogVisible', { required: true })
+const trainingPreviewVisible = defineModel<boolean>('trainingPreviewVisible', { required: true })
 
 const emit = defineEmits<{
   refreshBatches: []
@@ -350,6 +355,26 @@ function handleChunkStructureVisibleChange(visible: boolean) {
         <el-button @click="versionDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <FilePreviewDialog
+      v-model="trainingPreviewVisible"
+      :loading="trainingPreviewLoading"
+      title="训练资料预览"
+      :preview="trainingPreview
+        ? {
+          file: {
+            filename: trainingPreview.batch.source_file,
+            file_type: trainingPreview.batch.source_file?.split('.').pop() || '未知类型',
+            file_size: null,
+          },
+          preview_type: trainingPreview.preview_type,
+          content: trainingPreview.content,
+          truncated: trainingPreview.truncated,
+          file_url: trainingPreview.file_url,
+          charset: trainingPreview.charset,
+        }
+        : null"
+    />
   </section>
 </template>
 

@@ -70,6 +70,7 @@ export interface TrainingKnowledgePreviewResponse { // 训练资料上传文件�
   content: string
   truncated: boolean
   file_url?: string | null
+  charset?: string | null
 }
 
 export interface TrainingKnowledgeDeleteResponse { // 训练资料删除结果
