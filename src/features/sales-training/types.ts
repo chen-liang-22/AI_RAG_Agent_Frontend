@@ -9,6 +9,11 @@ export interface TrainingKnowledgeUploadPayload { // 销售训练知识上传请
 
 export interface TrainingKnowledgeUploadResponse { // 销售训练知识入库结果
   batch_id: string
+  document_id?: string | null
+  task_id?: string | null
+  task_status?: string | null
+  current_step?: string | null
+  progress?: number | null
   status: string
   chunk_count: number
   point_count: number
@@ -20,6 +25,11 @@ export interface TrainingKnowledgeUploadResponse { // 销售训练知识入库�
 
 export interface TrainingKnowledgeBatchResponse { // 训练资料上传批次
   batch_id: string
+  document_id?: string | null
+  task_id?: string | null
+  task_status?: string | null
+  current_step?: string | null
+  progress?: number | null
   source_type: string
   source_file: string
   file_path?: string | null
@@ -98,6 +108,10 @@ export interface TrainingKnowledgeRollbackResponse { // 训练资料版本回滚
 
 export interface TrainingKnowledgeReparseResponse { // 训练资料重新切分结果
   batch_id: string
+  task_id?: string | null
+  task_status?: string | null
+  current_step?: string | null
+  progress?: number | null
   status: string
   chunk_count: number
   point_count: number

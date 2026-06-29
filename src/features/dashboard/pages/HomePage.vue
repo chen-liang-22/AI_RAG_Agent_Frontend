@@ -77,6 +77,12 @@ import type {
   TrainingSessionSummaryResponse,
 } from '../../sales-training/types'
 import { displayOptionLabel, safeList, sortTrainingBatchesByImportTime, valueList } from '../../sales-training/composables/trainingDisplay'
+import {
+  canDeleteTrainingKnowledgeBatch,
+  canOpenTrainingKnowledgeChunks,
+  isTrainingIngestProcessing,
+  trainingIngestStepLabel,
+} from '../../sales-training/composables/trainingIngestTask'
 import TrainingKnowledgeWorkspace from '../../sales-training/components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../../sales-training/components/TrainingKnowledgeUploadPanel.vue'
 import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue'
@@ -237,7 +243,11 @@ const latestTrainingSession = computed(() => trainingSessions.value[0])
 const latestTrainingPlan = computed(() => trainingPlans.value[0])
 const trainingKnowledgeCurrentUploadChunkCount = computed(() => trainingKnowledgeUploadResult.value?.chunk_count ?? 0)
 const trainingKnowledgeCurrentUploadPointCount = computed(() => trainingKnowledgeUploadResult.value?.point_count ?? 0)
-const trainingKnowledgeCurrentUploadStatus = computed(() => trainingKnowledgeBatchStatusLabel(trainingKnowledgeUploadResult.value?.status || 'waiting'))
+const trainingKnowledgeCurrentUploadStatus = computed(() => {
+  const result = trainingKnowledgeUploadResult.value
+  if (isTrainingIngestProcessing(result)) return trainingIngestStepLabel(result)
+  return trainingKnowledgeBatchStatusLabel(result?.status || 'waiting')
+})
 const trainingKnowledgeCurrentUploadDuplicateText = computed(() => trainingKnowledgeUploadResult.value?.duplicate_of ? '已复用' : '未重复')
 const trainingKnowledgeCanClearUploadArea = computed(() => Boolean(trainingKnowledgeSelectedFile.value || trainingKnowledgeUploadResult.value))
 const trainingKnowledgeUploadQualityReport = computed(() => trainingKnowledgeUploadResult.value?.quality_report || {})
@@ -283,6 +293,31 @@ const trainingKnowledgeActiveChunkTypeChunks = computed(() => {
 const trainingKnowledgeUploadHelpDescription = computed(() => (
   '训练资料上传只负责文件入库、去重、待发布切片和发布，不在上传阶段配置画像、行业、难度和评分规则。'
 ))
+
+async function pollTrainingKnowledgeBatchUntilReady(batchId: string, maxAttempts = 45) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2000))
+    await refreshTrainingKnowledgeBatches()
+    const batch = trainingBatches.value.find((item) => item.batch_id === batchId)
+    if (!batch) return null
+    if (trainingKnowledgeUploadResult.value?.batch_id === batchId) {
+      trainingKnowledgeUploadResult.value = {
+        ...trainingKnowledgeUploadResult.value,
+        task_id: batch.task_id,
+        task_status: batch.task_status,
+        current_step: batch.current_step,
+        progress: batch.progress,
+        status: batch.status,
+        chunk_count: batch.chunk_count,
+        point_count: batch.point_count,
+        error_message: batch.error_message,
+        quality_report: batch.quality_report,
+      } as TrainingKnowledgeUploadResponse
+    }
+    if (!isTrainingIngestProcessing(batch)) return batch
+  }
+  return trainingBatches.value.find((item) => item.batch_id === batchId) || null
+}
 
 const salesTrainingStats = computed(() => [
   { label: '训练资料', value: trainingBatchTotal.value, detail: `${trainingPublishedBatchCount.value} 已发布 / ${trainingPendingBatchCount.value} 待处理`, icon: DatabaseZap, tone: 'cyan' },
@@ -886,7 +921,7 @@ async function handleConfirmKnowledgeUpload() { // 用户确认后把临时上�
     if (isKnowledgeResultStatus(response.status, 'result_kind', 'duplicate')) {
       ElMessage.info(response.message || '相同内容的文件已经存在')
     } else {
-      ElMessage.success(response.message || '文件已写入知识库')
+      ElMessage.success(response.message || '文件已保存，正在后台入库')
     }
     uploadPreviewVisible.value = false
     uploadPreview.value = null
@@ -923,10 +958,17 @@ async function uploadTrainingKnowledgeFile() { // 上传销售训练资料，后
       sourceType: 'lms_case',
       modelMode: 'high',
     })
-    const response = await listTrainingKnowledgeChunks(trainingKnowledgeUploadResult.value.batch_id)
-    trainingKnowledgeChunks.value = response.chunks
     trainingKnowledgeActiveBatchId.value = trainingKnowledgeUploadResult.value.batch_id
     await refreshTrainingKnowledgeBatches()
+    if (isTrainingIngestProcessing(trainingKnowledgeUploadResult.value)) {
+      ElMessage.success('训练资料已上传，后台正在解析和切片')
+      void pollTrainingKnowledgeBatchUntilReady(trainingKnowledgeUploadResult.value.batch_id)
+      return
+    }
+    if (canOpenTrainingKnowledgeChunks(trainingKnowledgeUploadResult.value)) {
+      const response = await listTrainingKnowledgeChunks(trainingKnowledgeUploadResult.value.batch_id)
+      trainingKnowledgeChunks.value = response.chunks
+    }
     ElMessage.success(trainingKnowledgeUploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练资料切片已生成，请确认后发布')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练知识上传失败')
@@ -1015,6 +1057,10 @@ async function reparseTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchRe
     if (trainingKnowledgeUploadResult.value?.batch_id === batchId) {
       trainingKnowledgeUploadResult.value = {
         ...trainingKnowledgeUploadResult.value,
+        task_id: result.task_id,
+        task_status: result.task_status,
+        current_step: result.current_step,
+        progress: result.progress,
         status: result.status,
         chunk_count: result.chunk_count,
         point_count: result.point_count,
@@ -1022,14 +1068,17 @@ async function reparseTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchRe
         quality_report: result.quality_report,
       }
     }
+    if (trainingKnowledgeActiveBatchId.value === batchId) {
+      trainingKnowledgeChunks.value = []
+      trainingKnowledgeActiveChunkSummary.value = null
+    }
     await refreshTrainingKnowledgeBatches()
-    const response = await listTrainingKnowledgeChunks(batchId)
-    trainingKnowledgeChunks.value = response.chunks
     trainingKnowledgeActiveBatchId.value = batchId
     if (trainingKnowledgeVersionDialogVisible.value) {
       await loadTrainingKnowledgeBatchVersions(batchId)
     }
-    ElMessage.success('LLM 重新切分完成，请检查切片后再发布')
+    ElMessage.success('已提交重新切分任务，完成后可查看切片并发布')
+    void pollTrainingKnowledgeBatchUntilReady(batchId)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练资料重新切分失败')
   } finally {
@@ -1084,6 +1133,10 @@ async function refreshTrainingKnowledgeBatches() { // 刷新首页弹窗内的�
 }
 
 async function openTrainingKnowledgeBatch(batch: TrainingKnowledgeBatchResponse) { // 点击训练资料批次时加载其切片结构
+  if (!canOpenTrainingKnowledgeChunks(batch)) {
+    ElMessage.warning(isTrainingIngestProcessing(batch) ? '资料仍在后台处理中，完成后才能查看切片' : '当前状态没有可查看的切片')
+    return
+  }
   trainingKnowledgeActiveBatchId.value = batch.batch_id
   trainingKnowledgeChunkStructureVisible.value = true
   trainingKnowledgeLoadingChunks.value = true
@@ -1122,6 +1175,10 @@ async function previewTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchRe
 }
 
 async function deleteTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchResponse) { // 删除训练资料批次和对应向量点
+  if (!canDeleteTrainingKnowledgeBatch(batch)) {
+    ElMessage.warning('资料正在入库处理中，暂不能删除')
+    return
+  }
   const confirmed = await confirmDangerOnce(
     `确定删除训练资料「${batch.source_file}」吗？删除后会移除对应向量点。`,
     '删除训练资料',

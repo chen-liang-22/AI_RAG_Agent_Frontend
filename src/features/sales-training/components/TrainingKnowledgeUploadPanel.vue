@@ -3,6 +3,13 @@
 import { BadgeCheck, CircleHelp, Sparkles, UploadCloud } from 'lucide-vue-next'
 import type { TrainingKnowledgeUploadResponse } from '../types'
 import { displayValue } from '../composables/trainingDisplay'
+import {
+  canPublishTrainingKnowledgeBatch,
+  canReparseTrainingKnowledgeBatch,
+  isTrainingIngestProcessing,
+  trainingIngestProgress,
+  trainingIngestStepLabel,
+} from '../composables/trainingIngestTask'
 
 const props = defineProps<{
   selectedFile: File | null
@@ -68,9 +75,16 @@ function onFileInputChange(event: Event) {
       <div class="training-upload-result" :class="{ duplicated: Boolean(uploadResult.duplicate_of) }">
         <BadgeCheck :size="16" />
         <div>
-          <strong>{{ uploadResult.duplicate_of ? '资料已存在，已复用历史批次' : uploadResult.status === 'published' ? '资料已发布并完成入库' : '资料已保存，等待确认发布' }}</strong>
+          <strong>{{ uploadResult.duplicate_of ? '资料已存在，已复用历史批次' : isTrainingIngestProcessing(uploadResult) ? '资料已保存，正在后台生成切片' : uploadResult.status === 'published' ? '资料已发布并完成入库' : '资料已保存，等待确认发布' }}</strong>
           <span>{{ uploadResult.source_file || '训练资料' }} · {{ uploadResult.chunk_count }} 切片 · 批次 {{ uploadResult.batch_id }}</span>
         </div>
+      </div>
+      <div v-if="isTrainingIngestProcessing(uploadResult)" class="training-task-progress">
+        <div>
+          <strong>{{ trainingIngestStepLabel(uploadResult) }}</strong>
+          <span>任务 {{ uploadResult.task_id || '等待创建' }}</span>
+        </div>
+        <el-progress :percentage="trainingIngestProgress(uploadResult)" :stroke-width="8" />
       </div>
       <div class="training-kpi-grid knowledge">
         <div><strong>{{ currentUploadChunkCount }}</strong><span>切片数量</span></div>
@@ -108,7 +122,7 @@ function onFileInputChange(event: Event) {
           <li v-for="warning in uploadQualityWarnings" :key="warning">{{ warning }}</li>
         </ul>
         <el-button
-          v-if="uploadResult.status === 'pending_review' || uploadResult.status === 'publish_failed'"
+          v-if="canPublishTrainingKnowledgeBatch(uploadResult)"
           class="tech-button primary full"
           :loading="publishingBatchId === uploadResult.batch_id"
           @click="emit('publishBatch', uploadResult.batch_id)"
@@ -116,7 +130,7 @@ function onFileInputChange(event: Event) {
           确认发布到训练库
         </el-button>
         <el-button
-          v-if="uploadResult.status === 'pending_review'"
+          v-if="canReparseTrainingKnowledgeBatch(uploadResult)"
           class="tech-button full"
           :icon="Sparkles"
           :loading="reparsingBatchId === uploadResult.batch_id"
@@ -303,6 +317,43 @@ function onFileInputChange(event: Event) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
+}
+
+.training-task-progress {
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 28%, var(--line));
+  border-radius: 12px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 9%, transparent), transparent 54%),
+    color-mix(in srgb, var(--surface-strong) 76%, transparent);
+}
+
+.training-task-progress > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.training-task-progress strong,
+.training-task-progress span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-task-progress strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.training-task-progress span {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .training-kpi-grid div {

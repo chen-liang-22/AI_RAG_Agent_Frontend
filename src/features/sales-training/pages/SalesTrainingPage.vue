@@ -91,6 +91,12 @@ import {
   uniqueList,
   valueList,
 } from '../composables/trainingDisplay'
+import {
+  canDeleteTrainingKnowledgeBatch,
+  canOpenTrainingKnowledgeChunks,
+  isTrainingIngestProcessing,
+  trainingIngestStepLabel,
+} from '../composables/trainingIngestTask'
 import TrainingKnowledgeWorkspace from '../components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadPanel.vue'
 import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
@@ -303,7 +309,11 @@ const deletingPlanId = ref('')
 const weaknessTags = computed(() => weaknessTagsValue.value.filter(Boolean))
 const currentUploadChunkCount = computed(() => uploadResult.value?.chunk_count ?? 0)
 const currentUploadPointCount = computed(() => uploadResult.value?.point_count ?? 0)
-const currentUploadStatus = computed(() => batchStatusLabel(uploadResult.value?.status || 'waiting'))
+const currentUploadStatus = computed(() => {
+  const result = uploadResult.value
+  if (isTrainingIngestProcessing(result)) return trainingIngestStepLabel(result)
+  return batchStatusLabel(result?.status || 'waiting')
+})
 const currentUploadDuplicateText = computed(() => uploadResult.value?.duplicate_of ? '已复用' : '未重复')
 const canClearUploadArea = computed(() => Boolean(selectedFile.value || uploadResult.value))
 const uploadQualityReport = computed(() => uploadResult.value?.quality_report || {})
@@ -403,6 +413,30 @@ const trainingReadinessPercent = computed(() => {
   ].filter(Boolean).length
   return Math.round((readyItems / 5) * 100)
 })
+
+async function pollTrainingBatchUntilReady(batchId: string, maxAttempts = 45) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2000))
+    await refreshTrainingBatches()
+    const batch = trainingBatches.value.find((item) => item.batch_id === batchId)
+    if (!batch) return null
+    if (uploadResult.value?.batch_id === batchId) {
+      uploadResult.value = {
+        ...uploadResult.value,
+        task_id: batch.task_id,
+        task_status: batch.task_status,
+        current_step: batch.current_step,
+        progress: batch.progress,
+        status: batch.status,
+        chunk_count: batch.chunk_count,
+        point_count: batch.point_count,
+        quality_report: batch.quality_report,
+      }
+    }
+    if (!isTrainingIngestProcessing(batch)) return batch
+  }
+  return trainingBatches.value.find((item) => item.batch_id === batchId) || null
+}
 
 const nextTrainingAction = computed<TrainingNextAction>(() => {
   if (batchTotal.value === 0) {
@@ -1855,12 +1889,18 @@ async function uploadKnowledge() {
       sourceType: sourceType.value,
       modelMode: modelMode.value,
     })
-    // 第三步：上传成功后立即拉取本批次切片，让右侧切片概览能马上展示。
-    const response = await listTrainingKnowledgeChunks(uploadResult.value.batch_id)
-    chunks.value = response.chunks
+    // 第三步：异步入库只返回任务编号，切片要等后台处理完成后再查。
     activeBatchId.value = uploadResult.value.batch_id
-    // 第四步：异步刷新上传批次列表，不阻塞当前成功提示。
-    void refreshTrainingBatches()
+    await refreshTrainingBatches()
+    if (isTrainingIngestProcessing(uploadResult.value)) {
+      ElMessage.success('训练资料已上传，后台正在解析和切片')
+      void pollTrainingBatchUntilReady(uploadResult.value.batch_id)
+      return
+    }
+    if (canOpenTrainingKnowledgeChunks(uploadResult.value)) {
+      const response = await listTrainingKnowledgeChunks(uploadResult.value.batch_id)
+      chunks.value = response.chunks
+    }
     ElMessage.success(uploadResult.value.duplicate_of ? '资料已存在，已复用历史入库批次' : '训练资料切片已生成，请确认后发布')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练知识上传失败')
@@ -1965,6 +2005,10 @@ async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | stri
     if (uploadResult.value?.batch_id === batchId) {
       uploadResult.value = {
         ...uploadResult.value,
+        task_id: result.task_id,
+        task_status: result.task_status,
+        current_step: result.current_step,
+        progress: result.progress,
         status: result.status,
         chunk_count: result.chunk_count,
         point_count: result.point_count,
@@ -1972,14 +2016,17 @@ async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | stri
         quality_report: result.quality_report,
       }
     }
+    if (activeBatchId.value === batchId) {
+      chunks.value = []
+      activeChunkSummary.value = null
+    }
     await refreshTrainingBatches()
-    const response = await listTrainingKnowledgeChunks(batchId)
-    chunks.value = response.chunks
     activeBatchId.value = batchId
     if (versionDialogVisible.value) {
       await loadBatchVersions(batchId)
     }
-    ElMessage.success('LLM 重新切分完成，请检查切片后再发布')
+    ElMessage.success('已提交重新切分任务，完成后可查看切片并发布')
+    void pollTrainingBatchUntilReady(batchId)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练资料重新切分失败')
   } finally {
@@ -2035,6 +2082,10 @@ async function refreshTrainingBatches() {
 
 async function openTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
   // 点击某个批次时，只切换当前批次和切片列表，不会重新解析文件。
+  if (!canOpenTrainingKnowledgeChunks(batch)) {
+    ElMessage.warning(isTrainingIngestProcessing(batch) ? '资料仍在后台处理中，完成后才能查看切片' : '当前状态没有可查看的切片')
+    return
+  }
   activeBatchId.value = batch.batch_id
   chunkStructureVisible.value = true
   loadingChunks.value = true
@@ -2076,6 +2127,10 @@ async function previewTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
 
 async function deleteTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
   // 删除前先二次确认，因为后端会同步删除该批次在 Qdrant 中的向量点。
+  if (!canDeleteTrainingKnowledgeBatch(batch)) {
+    ElMessage.warning('资料正在入库处理中，暂不能删除')
+    return
+  }
   try {
     await ElMessageBox.confirm(
       `确定删除训练资料「${batch.source_file}」吗？删除后会移除对应向量点。`,

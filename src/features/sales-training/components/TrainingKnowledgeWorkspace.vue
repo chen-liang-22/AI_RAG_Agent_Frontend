@@ -16,6 +16,15 @@ import type {
   TrainingKnowledgePreviewResponse,
 } from '../types'
 import { displayValue } from '../composables/trainingDisplay'
+import {
+  canDeleteTrainingKnowledgeBatch,
+  canOpenTrainingKnowledgeChunks,
+  canPublishTrainingKnowledgeBatch,
+  canReparseTrainingKnowledgeBatch,
+  isTrainingIngestProcessing,
+  trainingIngestProgress,
+  trainingIngestStepLabel,
+} from '../composables/trainingIngestTask'
 import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue'
 
 interface ChunkTypeSummary {
@@ -105,6 +114,17 @@ function handleChunkStructureVisibleChange(visible: boolean) {
               </span>
               <em>{{ formatTime(batch.updated_at) }}</em>
             </div>
+            <div v-if="isTrainingIngestProcessing(batch) || batch.task_status === 'failed'" class="batch-task-progress">
+              <div>
+                <strong>{{ trainingIngestStepLabel(batch) }}</strong>
+                <span>{{ batch.task_status === 'failed' ? batch.error_message || '任务失败' : `${trainingIngestProgress(batch)}%` }}</span>
+              </div>
+              <el-progress
+                :percentage="trainingIngestProgress(batch)"
+                :status="batch.task_status === 'failed' ? 'exception' : undefined"
+                :stroke-width="7"
+              />
+            </div>
             <div class="batch-item-meta">
               <span>MD5 去重</span>
               <code>{{ batch.file_md5 ? batch.file_md5.slice(0, 10) : '未记录' }}</code>
@@ -114,12 +134,13 @@ function handleChunkStructureVisibleChange(visible: boolean) {
                 class="batch-icon-button primary"
                 :icon="Layers3"
                 :loading="loadingChunks && activeBatchId === batch.batch_id"
+                :disabled="!canOpenTrainingKnowledgeChunks(batch)"
                 @click="emit('openTrainingBatch', batch)"
               >
                 查看切片
               </el-button>
               <el-button
-                v-if="batch.status === 'pending_review' || batch.status === 'publish_failed'"
+                v-if="canPublishTrainingKnowledgeBatch(batch)"
                 class="batch-icon-button"
                 :icon="BadgeCheck"
                 :loading="publishingBatchId === batch.batch_id"
@@ -128,7 +149,7 @@ function handleChunkStructureVisibleChange(visible: boolean) {
                 发布
               </el-button>
               <el-button
-                v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed' || batch.status === 'publish_failed'"
+                v-if="canReparseTrainingKnowledgeBatch(batch)"
                 class="batch-icon-button"
                 :icon="Sparkles"
                 :loading="reparsingBatchId === batch.batch_id"
@@ -165,6 +186,7 @@ function handleChunkStructureVisibleChange(visible: boolean) {
                 class="batch-icon-button danger"
                 :icon="Trash2"
                 :loading="deletingBatchId === batch.batch_id"
+                :disabled="!canDeleteTrainingKnowledgeBatch(batch)"
                 @click="emit('deleteBatch', batch)"
               >
                 删除
@@ -301,6 +323,7 @@ function handleChunkStructureVisibleChange(visible: boolean) {
           </header>
           <div class="version-meta-grid">
             <span>状态：{{ batchStatusLabel(batch.status) }}</span>
+            <span>任务：{{ trainingIngestStepLabel(batch) }}</span>
             <span>切片：{{ batch.chunk_count }}</span>
             <span>向量点：{{ batch.point_count }}</span>
             <span>质量：{{ displayValue(batch.quality_report?.score ?? '-') }} 分</span>
@@ -308,7 +331,7 @@ function handleChunkStructureVisibleChange(visible: boolean) {
           <p v-if="batch.error_message">{{ batch.error_message }}</p>
           <footer>
             <el-button
-              v-if="batch.status === 'pending_review' || batch.status === 'publish_failed'"
+              v-if="canPublishTrainingKnowledgeBatch(batch)"
               class="batch-icon-button"
               :icon="BadgeCheck"
               :loading="publishingBatchId === batch.batch_id"
@@ -317,7 +340,7 @@ function handleChunkStructureVisibleChange(visible: boolean) {
               发布
             </el-button>
             <el-button
-              v-if="batch.status === 'pending_review' || batch.status === 'parsing_failed' || batch.status === 'publish_failed'"
+              v-if="canReparseTrainingKnowledgeBatch(batch)"
               class="batch-icon-button"
               :icon="Sparkles"
               :loading="reparsingBatchId === batch.batch_id"
@@ -334,7 +357,12 @@ function handleChunkStructureVisibleChange(visible: boolean) {
             >
               回滚
             </el-button>
-            <el-button class="batch-icon-button" :icon="FileText" @click="emit('openTrainingBatch', batch)">
+            <el-button
+              class="batch-icon-button"
+              :icon="FileText"
+              :disabled="!canOpenTrainingKnowledgeChunks(batch)"
+              @click="emit('openTrainingBatch', batch)"
+            >
               查看切片
             </el-button>
             <el-button
@@ -519,6 +547,40 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   border-radius: 10px;
   padding: 6px 8px;
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
+}
+
+.batch-task-progress {
+  display: grid;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
+  border-radius: 10px;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--surface-strong) 64%, transparent);
+}
+
+.batch-task-progress > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.batch-task-progress strong,
+.batch-task-progress span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-task-progress strong {
+  color: color-mix(in srgb, var(--text) 82%, var(--cyan));
+}
+
+.batch-task-progress span {
+  color: var(--text-muted);
 }
 
 .batch-item-meta span {

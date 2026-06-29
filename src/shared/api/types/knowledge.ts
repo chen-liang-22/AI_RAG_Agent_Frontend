@@ -20,6 +20,10 @@ export interface KnowledgeUploadResponse { // `/knowledge/upload/confirm` 确认
   status: string // 知识库操作结果编码，具体值来自 knowledge_result_status 字典
   message: string // 后端返回的简短说明
   document: KnowledgeFileResponse // 对应的文件记录
+  task_id?: string | null // 异步入库任务 ID，重复文件时为空
+  task_status?: string | null // 异步任务状态：queued/running/succeeded/failed
+  current_step?: string | null // 当前处理步骤
+  progress?: number | null // 入库进度，0 到 100
 }
 
 export interface KnowledgeUploadPreviewResponse { // `/knowledge/upload/preview` 上传预览响应结构
