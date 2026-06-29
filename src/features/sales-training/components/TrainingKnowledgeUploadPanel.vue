@@ -4,6 +4,7 @@ import { BadgeCheck, CircleHelp, Sparkles, UploadCloud } from 'lucide-vue-next'
 import type { TrainingKnowledgeUploadResponse } from '../types'
 import { displayValue } from '../composables/trainingDisplay'
 import {
+  canRetryTrainingIngestTask,
   canPublishTrainingKnowledgeBatch,
   canReparseTrainingKnowledgeBatch,
   isTrainingIngestProcessing,
@@ -28,6 +29,7 @@ const props = defineProps<{
   uploadPublishValidation: Record<string, unknown> | null
   publishingBatchId: string
   reparsingBatchId: string
+  retryingTaskId: string
   qualityLevelLabel: (level: unknown) => string
   qualityLevelClass: (level: unknown) => string
 }>()
@@ -38,6 +40,7 @@ const emit = defineEmits<{
   upload: []
   publishBatch: [batchId: string]
   reparseBatch: [batchId: string]
+  retryTask: [batchId: string]
 }>()
 
 function onFileInputChange(event: Event) {
@@ -85,6 +88,21 @@ function onFileInputChange(event: Event) {
           <span>任务 {{ uploadResult.task_id || '等待创建' }}</span>
         </div>
         <el-progress :percentage="trainingIngestProgress(uploadResult)" :stroke-width="8" />
+      </div>
+      <div v-else-if="canRetryTrainingIngestTask(uploadResult)" class="training-task-progress failed">
+        <div>
+          <strong>{{ uploadResult.error_message || '入库任务失败' }}</strong>
+          <span>任务 {{ uploadResult.task_id || '未记录' }}</span>
+        </div>
+        <el-progress :percentage="trainingIngestProgress(uploadResult)" status="exception" :stroke-width="8" />
+        <el-button
+          class="tech-button full"
+          :icon="Sparkles"
+          :loading="retryingTaskId === uploadResult.task_id"
+          @click="emit('retryTask', uploadResult.batch_id)"
+        >
+          重试入库
+        </el-button>
       </div>
       <div class="training-kpi-grid knowledge">
         <div><strong>{{ currentUploadChunkCount }}</strong><span>切片数量</span></div>
@@ -328,6 +346,10 @@ function onFileInputChange(event: Event) {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--cyan) 9%, transparent), transparent 54%),
     color-mix(in srgb, var(--surface-strong) 76%, transparent);
+}
+
+.training-task-progress.failed {
+  border-color: color-mix(in srgb, #ff6b7a 38%, var(--line));
 }
 
 .training-task-progress > div {

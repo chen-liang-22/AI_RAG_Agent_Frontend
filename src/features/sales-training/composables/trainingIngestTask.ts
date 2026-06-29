@@ -74,8 +74,12 @@ export function canDeleteTrainingKnowledgeBatch(item: TrainingIngestTaskState | 
   if (!item) return true
 
   const taskStatus = normalizeCode(item.task_status)
-  if (taskStatus === 'running') return false
-  if (taskStatus === 'queued' || taskStatus === 'failed' || taskStatus === 'succeeded') return true
+  if (taskStatus === 'queued' || taskStatus === 'running') return false
+  if (taskStatus === 'failed' || taskStatus === 'succeeded') return true
 
   return !ACTIVE_BATCH_STATUSES.has(normalizeCode(item.status))
+}
+
+export function canRetryTrainingIngestTask(item: TrainingIngestTaskState | null | undefined) {
+  return Boolean(item?.task_status === 'failed')
 }

@@ -19,6 +19,7 @@ export interface TrainingKnowledgeUploadResponse { // 销售训练知识入库�
   point_count: number
   source_file?: string | null
   duplicate_of?: string | null
+  error_message?: string | null
   quality_report: Record<string, unknown>
   failed_chunks: string[]
 }
@@ -116,7 +117,28 @@ export interface TrainingKnowledgeReparseResponse { // 训练资料重新切分�
   chunk_count: number
   point_count: number
   source_file?: string | null
+  error_message?: string | null
   quality_report: Record<string, unknown>
+}
+
+export interface IngestTaskResponse { // 异步入库任务状态
+  task_id: string
+  task_type: string
+  business_scene?: string | null
+  document_id?: string | null
+  batch_id?: string | null
+  task_status: string
+  status: string
+  current_step: string
+  progress: number
+  attempt_count: number
+  max_attempts: number
+  error_message?: string | null
+  metadata: Record<string, unknown>
+  created_at?: string | null
+  updated_at?: string | null
+  started_at?: string | null
+  finished_at?: string | null
 }
 
 export interface TrainingKnowledgeVersionListResponse { // 训练资料版本链

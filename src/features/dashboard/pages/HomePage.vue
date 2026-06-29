@@ -83,6 +83,7 @@ import {
   isTrainingIngestProcessing,
   trainingIngestStepLabel,
 } from '../../sales-training/composables/trainingIngestTask'
+import { buildTrainingBatchFromUploadResult, retryTrainingIngestTaskForBatch } from '../../sales-training/composables/trainingIngestRetry'
 import TrainingKnowledgeWorkspace from '../../sales-training/components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../../sales-training/components/TrainingKnowledgeUploadPanel.vue'
 import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue'
@@ -189,6 +190,7 @@ const trainingKnowledgeUploading = ref(false) // 训练资料上传状态
 const trainingKnowledgePublishingBatchId = ref('') // 正在发布的训练资料批次 ID
 const trainingKnowledgeRollingBackBatchId = ref('') // 正在回滚的训练资料批次 ID
 const trainingKnowledgeReparsingBatchId = ref('') // 正在重新切分的训练资料批次 ID
+const trainingKnowledgeRetryingTaskId = ref('') // 正在重试的异步入库任务 ID
 const trainingKnowledgePreviewingBatchId = ref('') // 正在预览训练资料的批次 ID
 const trainingKnowledgeDeletingBatchId = ref('') // 正在删除的训练资料批次 ID
 const trainingKnowledgeVersionDialogVisible = ref(false) // 训练资料版本链弹窗开关
@@ -1086,6 +1088,35 @@ async function reparseTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchRe
   }
 }
 
+async function retryTrainingKnowledgeIngestTask(batch: TrainingKnowledgeBatchResponse) { // 重试失败的训练资料异步入库任务
+  await retryTrainingIngestTaskForBatch({
+    batch,
+    retryingTaskId: trainingKnowledgeRetryingTaskId,
+    uploadResult: trainingKnowledgeUploadResult,
+    activeBatchId: trainingKnowledgeActiveBatchId,
+    clearActiveChunks: () => {
+      trainingKnowledgeChunks.value = []
+      trainingKnowledgeActiveChunkSummary.value = null
+    },
+    refreshBatches: refreshTrainingKnowledgeBatches,
+    versionDialogVisible: trainingKnowledgeVersionDialogVisible,
+    loadBatchVersions: loadTrainingKnowledgeBatchVersions,
+    pollUntilReady: pollTrainingKnowledgeBatchUntilReady,
+    afterRetry: refreshHealth,
+  })
+}
+
+async function retryTrainingKnowledgeUploadResultIngestTask(batchId: string) { // 从上传结果卡片触发失败任务重试
+  const batch = trainingBatches.value.find((item) => item.batch_id === batchId)
+  if (batch) {
+    await retryTrainingKnowledgeIngestTask(batch)
+    return
+  }
+  if (trainingKnowledgeUploadResult.value?.batch_id === batchId && trainingKnowledgeUploadResult.value.task_id) {
+    await retryTrainingKnowledgeIngestTask(buildTrainingBatchFromUploadResult(trainingKnowledgeUploadResult.value, 'lms_case'))
+  }
+}
+
 async function loadTrainingKnowledgeBatchVersions(batchId: string) { // 读取同一份训练资料的版本链
   trainingKnowledgeVersionLoading.value = true
   try {
@@ -1919,6 +1950,7 @@ onMounted(() => {
           :upload-publish-validation="trainingKnowledgeUploadPublishValidation"
           :publishing-batch-id="trainingKnowledgePublishingBatchId"
           :reparsing-batch-id="trainingKnowledgeReparsingBatchId"
+          :retrying-task-id="trainingKnowledgeRetryingTaskId"
           :quality-level-label="trainingKnowledgeQualityLevelLabel"
           :quality-level-class="trainingKnowledgeQualityLevelClass"
           @file-change="onTrainingKnowledgeFileChange"
@@ -1926,6 +1958,7 @@ onMounted(() => {
           @upload="uploadTrainingKnowledgeFile"
           @publish-batch="publishTrainingKnowledgeFileBatch"
           @reparse-batch="reparseTrainingKnowledgeFileBatch"
+          @retry-task="retryTrainingKnowledgeUploadResultIngestTask"
         />
         <TrainingKnowledgeWorkspace
           v-model:batch-page="trainingKnowledgeBatchPage"
@@ -1949,6 +1982,7 @@ onMounted(() => {
           :publishing-batch-id="trainingKnowledgePublishingBatchId"
           :rolling-back-batch-id="trainingKnowledgeRollingBackBatchId"
           :reparsing-batch-id="trainingKnowledgeReparsingBatchId"
+          :retrying-task-id="trainingKnowledgeRetryingTaskId"
           :previewing-batch-id="trainingKnowledgePreviewingBatchId"
           :deleting-batch-id="trainingKnowledgeDeletingBatchId"
           :version-loading="trainingKnowledgeVersionLoading"
@@ -1961,6 +1995,7 @@ onMounted(() => {
           @refresh-batches="refreshTrainingKnowledgeBatches"
           @publish-batch="publishTrainingKnowledgeFileBatch"
           @reparse-batch="reparseTrainingKnowledgeFileBatch"
+          @retry-task="retryTrainingKnowledgeIngestTask"
           @rollback-batch="rollbackTrainingKnowledgeFileBatch"
           @open-batch-versions="openTrainingKnowledgeBatchVersions"
           @open-training-batch="openTrainingKnowledgeBatch"

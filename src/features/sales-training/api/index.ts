@@ -1,5 +1,5 @@
 import { buildRequestHeaders, fetchWithAuth, readErrorMessage, request } from '../../../shared/api/http'
-import type { TrainingGoalSettingResponse, TrainingKnowledgeBatchListResponse, TrainingKnowledgeChunkListResponse, TrainingKnowledgeDeleteResponse, TrainingKnowledgePreviewResponse, TrainingKnowledgePublishResponse, TrainingKnowledgeReparseResponse, TrainingKnowledgeRollbackResponse, TrainingKnowledgeUploadPayload, TrainingKnowledgeUploadResponse, TrainingKnowledgeVersionListResponse, TrainingPlanCreatePayload, TrainingPlanDeleteResponse, TrainingPlanDetailResponse, TrainingPlanListResponse, TrainingPlanUpdatePayload, TrainingRoleGeneratePayload, TrainingRoleGenerateResponse, TrainingScenarioPolishPayload, TrainingScenarioPolishResponse, TrainingScoreResponse, TrainingSessionDetailResponse, TrainingSessionListResponse, TrainingSessionResponse, TrainingSessionStartPayload, TrainingStreamHandlers, TrainingSupplementQuestionGenerateResponse, TrainingTurnPayload, TrainingTurnResponse } from '../types'
+import type { IngestTaskResponse, TrainingGoalSettingResponse, TrainingKnowledgeBatchListResponse, TrainingKnowledgeChunkListResponse, TrainingKnowledgeDeleteResponse, TrainingKnowledgePreviewResponse, TrainingKnowledgePublishResponse, TrainingKnowledgeReparseResponse, TrainingKnowledgeRollbackResponse, TrainingKnowledgeUploadPayload, TrainingKnowledgeUploadResponse, TrainingKnowledgeVersionListResponse, TrainingPlanCreatePayload, TrainingPlanDeleteResponse, TrainingPlanDetailResponse, TrainingPlanListResponse, TrainingPlanUpdatePayload, TrainingRoleGeneratePayload, TrainingRoleGenerateResponse, TrainingScenarioPolishPayload, TrainingScenarioPolishResponse, TrainingScoreResponse, TrainingSessionDetailResponse, TrainingSessionListResponse, TrainingSessionResponse, TrainingSessionStartPayload, TrainingStreamHandlers, TrainingSupplementQuestionGenerateResponse, TrainingTurnPayload, TrainingTurnResponse } from '../types'
 
 export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPayload) { // 上传销售训练知识并写入临时向量库预览
   // 文件上传必须使用 FormData，让浏览器自动生成 multipart boundary。
@@ -78,6 +78,12 @@ export function listTrainingKnowledgeBatches(page = 1, pageSize = 10) { // 查�
     page_size: String(pageSize),
   })
   return request<TrainingKnowledgeBatchListResponse>(`/training/knowledge/batches?${params.toString()}`)
+}
+
+export function retryIngestTask(taskId: string) { // 重试失败的异步入库任务
+  return request<IngestTaskResponse>(`/ingest-tasks/${encodeURIComponent(taskId)}/retry`, {
+    method: 'POST',
+  })
 }
 
 export function createTrainingPlan(payload: TrainingPlanCreatePayload) { // 创建训练方案，名称允许重复，后端用 plan_id 区分

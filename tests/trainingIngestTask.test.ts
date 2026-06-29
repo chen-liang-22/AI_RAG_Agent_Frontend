@@ -6,6 +6,7 @@ import {
   canOpenTrainingKnowledgeChunks,
   canPublishTrainingKnowledgeBatch,
   canReparseTrainingKnowledgeBatch,
+  canRetryTrainingIngestTask,
   isTrainingIngestProcessing,
   trainingIngestProgress,
   trainingIngestStepLabel,
@@ -33,9 +34,10 @@ test('published batch can be opened but is not reparsed by current backend contr
   assert.equal(canReparseTrainingKnowledgeBatch(batch), false)
 })
 
-test('running tasks cannot be deleted but queued tasks can be deleted', () => {
+test('queued and running tasks cannot be deleted while failed tasks can be retried', () => {
   assert.equal(canDeleteTrainingKnowledgeBatch({ status: 'parsing', task_status: 'running' }), false)
-  assert.equal(canDeleteTrainingKnowledgeBatch({ status: 'parsing', task_status: 'queued' }), true)
+  assert.equal(canDeleteTrainingKnowledgeBatch({ status: 'parsing', task_status: 'queued' }), false)
+  assert.equal(canRetryTrainingIngestTask({ status: 'parsing_failed', task_status: 'failed' }), true)
 })
 
 test('progress is clamped and step code is translated', () => {

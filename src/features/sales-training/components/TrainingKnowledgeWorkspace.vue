@@ -21,6 +21,7 @@ import {
   canOpenTrainingKnowledgeChunks,
   canPublishTrainingKnowledgeBatch,
   canReparseTrainingKnowledgeBatch,
+  canRetryTrainingIngestTask,
   isTrainingIngestProcessing,
   trainingIngestProgress,
   trainingIngestStepLabel,
@@ -52,6 +53,7 @@ const props = defineProps<{
   publishingBatchId: string
   rollingBackBatchId: string
   reparsingBatchId: string
+  retryingTaskId: string
   previewingBatchId: string
   deletingBatchId: string
   versionLoading: boolean
@@ -73,6 +75,7 @@ const emit = defineEmits<{
   refreshBatches: []
   publishBatch: [batchId: string]
   reparseBatch: [batch: TrainingKnowledgeBatchResponse | string]
+  retryTask: [batch: TrainingKnowledgeBatchResponse]
   rollbackBatch: [batch: TrainingKnowledgeBatchResponse]
   openBatchVersions: [batch: TrainingKnowledgeBatchResponse]
   openTrainingBatch: [batch: TrainingKnowledgeBatchResponse]
@@ -124,6 +127,17 @@ function handleChunkStructureVisibleChange(visible: boolean) {
                 :status="batch.task_status === 'failed' ? 'exception' : undefined"
                 :stroke-width="7"
               />
+              <el-button
+                v-if="canRetryTrainingIngestTask(batch)"
+                class="batch-inline-retry"
+                text
+                size="small"
+                :icon="RefreshCw"
+                :loading="retryingTaskId === batch.task_id"
+                @click.stop="emit('retryTask', batch)"
+              >
+                重试入库
+              </el-button>
             </div>
             <div class="batch-item-meta">
               <span>MD5 去重</span>
@@ -372,6 +386,15 @@ function handleChunkStructureVisibleChange(visible: boolean) {
               @click="emit('previewBatch', batch)"
             >
               预览
+            </el-button>
+            <el-button
+              v-if="canRetryTrainingIngestTask(batch)"
+              class="batch-icon-button"
+              :icon="RefreshCw"
+              :loading="retryingTaskId === batch.task_id"
+              @click="emit('retryTask', batch)"
+            >
+              重试
             </el-button>
           </footer>
         </article>

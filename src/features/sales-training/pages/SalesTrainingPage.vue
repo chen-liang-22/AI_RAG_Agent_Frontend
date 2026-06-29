@@ -97,6 +97,7 @@ import {
   isTrainingIngestProcessing,
   trainingIngestStepLabel,
 } from '../composables/trainingIngestTask'
+import { buildTrainingBatchFromUploadResult, retryTrainingIngestTaskForBatch } from '../composables/trainingIngestRetry'
 import TrainingKnowledgeWorkspace from '../components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadPanel.vue'
 import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
@@ -293,6 +294,7 @@ const uploading = ref(false)
 const publishingBatchId = ref('')
 const rollingBackBatchId = ref('')
 const reparsingBatchId = ref('')
+const retryingTaskId = ref('')
 const generatingRole = ref(false)
 const generatingGoal = ref(false)
 const startingSession = ref(false)
@@ -2034,6 +2036,34 @@ async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | stri
   }
 }
 
+async function retryTrainingIngestTask(batch: TrainingKnowledgeBatchResponse) {
+  await retryTrainingIngestTaskForBatch({
+    batch,
+    retryingTaskId,
+    uploadResult,
+    activeBatchId,
+    clearActiveChunks: () => {
+      chunks.value = []
+      activeChunkSummary.value = null
+    },
+    refreshBatches: refreshTrainingBatches,
+    versionDialogVisible,
+    loadBatchVersions,
+    pollUntilReady: pollTrainingBatchUntilReady,
+  })
+}
+
+async function retryUploadResultIngestTask(batchId: string) {
+  const batch = trainingBatches.value.find((item) => item.batch_id === batchId)
+  if (batch) {
+    await retryTrainingIngestTask(batch)
+    return
+  }
+  if (uploadResult.value?.batch_id === batchId && uploadResult.value.task_id) {
+    await retryTrainingIngestTask(buildTrainingBatchFromUploadResult(uploadResult.value, sourceType.value))
+  }
+}
+
 async function loadBatchVersions(batchId: string) {
   // 版本链用于展示同一份资料的全部历史版本，后续回滚和查看切片都从这里进入。
   versionLoading.value = true
@@ -2558,6 +2588,7 @@ onMounted(() => {
           :upload-publish-validation="uploadPublishValidation"
           :publishing-batch-id="publishingBatchId"
           :reparsing-batch-id="reparsingBatchId"
+          :retrying-task-id="retryingTaskId"
           :quality-level-label="qualityLevelLabel"
           :quality-level-class="qualityLevelClass"
           @file-change="onFileChange"
@@ -2565,6 +2596,7 @@ onMounted(() => {
           @upload="uploadKnowledge"
           @publish-batch="publishTrainingBatch"
           @reparse-batch="reparseTrainingBatch"
+          @retry-task="retryUploadResultIngestTask"
         />
 
         <section v-else class="training-next-card compact">
@@ -2626,6 +2658,7 @@ onMounted(() => {
       :publishing-batch-id="publishingBatchId"
       :rolling-back-batch-id="rollingBackBatchId"
       :reparsing-batch-id="reparsingBatchId"
+      :retrying-task-id="retryingTaskId"
       :previewing-batch-id="previewingBatchId"
       :deleting-batch-id="deletingBatchId"
       :version-loading="versionLoading"
@@ -2638,6 +2671,7 @@ onMounted(() => {
       @refresh-batches="refreshTrainingBatches"
       @publish-batch="publishTrainingBatch"
       @reparse-batch="reparseTrainingBatch"
+      @retry-task="retryTrainingIngestTask"
       @rollback-batch="rollbackTrainingBatch"
       @open-batch-versions="openBatchVersions"
       @open-training-batch="openTrainingBatch"
