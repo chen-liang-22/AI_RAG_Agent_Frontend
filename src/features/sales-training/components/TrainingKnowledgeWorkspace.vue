@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 训练资料工作区：只负责资料管理 UI，上传/发布/回滚等业务动作由父页面执行。
+import { ref } from 'vue'
 import {
   BadgeCheck,
   Eye,
@@ -7,6 +8,7 @@ import {
   Layers3,
   RefreshCw,
   Route,
+  Search,
   Sparkles,
   Trash2,
 } from 'lucide-vue-next'
@@ -16,6 +18,12 @@ import type {
   TrainingKnowledgePreviewResponse,
 } from '../types'
 import { displayValue } from '../composables/trainingDisplay'
+import {
+  trainingKnowledgeQualityMetricItems,
+  trainingKnowledgeQualitySummary,
+  trainingKnowledgeQualityWarnings,
+  trainingKnowledgeSplitterLabel,
+} from '../composables/trainingKnowledgeDisplay'
 import {
   canDeleteTrainingKnowledgeBatch,
   canOpenTrainingKnowledgeChunks,
@@ -66,10 +74,13 @@ const props = defineProps<{
 }>()
 
 const batchPage = defineModel<number>('batchPage', { required: true })
+const batchKeywordInput = defineModel<string>('batchKeywordInput', { default: '' })
 const chunkStructureVisible = defineModel<boolean>('chunkStructureVisible', { required: true })
 const chunkDetailVisible = defineModel<boolean>('chunkDetailVisible', { required: true })
 const versionDialogVisible = defineModel<boolean>('versionDialogVisible', { required: true })
 const trainingPreviewVisible = defineModel<boolean>('trainingPreviewVisible', { required: true })
+const qualityWarningDialogVisible = ref(false)
+const activeQualityWarningBatch = ref<TrainingKnowledgeBatchResponse | null>(null)
 
 const emit = defineEmits<{
   refreshBatches: []
@@ -81,6 +92,7 @@ const emit = defineEmits<{
   openTrainingBatch: [batch: TrainingKnowledgeBatchResponse]
   previewBatch: [batch: TrainingKnowledgeBatchResponse]
   deleteBatch: [batch: TrainingKnowledgeBatchResponse]
+  searchBatches: [keyword: string]
   openChunkSummary: [summary: ChunkTypeSummary]
   closeChunkStructure: []
 }>()
@@ -92,6 +104,66 @@ function handleChunkStructureVisibleChange(visible: boolean) {
     emit('closeChunkStructure')
   }
 }
+
+function batchQualitySummary(batch: TrainingKnowledgeBatchResponse) {
+  // 统一生成卡片上的质量得分文案，评分未完成时展示“待评分”。
+  return trainingKnowledgeQualitySummary(batch.quality_report)
+}
+
+function batchQualityTags(batch: TrainingKnowledgeBatchResponse) {
+  // 已上传资料卡片需要露出质量结论、切分方式和告警数量，避免只看到一个分数。
+  const summary = batchQualitySummary(batch)
+  const tags = [
+    summary.detailText,
+    trainingKnowledgeSplitterLabel(batch.quality_report),
+  ]
+  if (summary.warningCount > 0) {
+    tags.push(`告警 ${summary.warningCount} 条`)
+  }
+  return tags.filter(Boolean)
+}
+
+function batchQualityWarnings(batch: TrainingKnowledgeBatchResponse | null) {
+  // 告警原因直接来自后端质量报告，保持和上传结果卡片一致。
+  return trainingKnowledgeQualityWarnings(batch?.quality_report)
+}
+
+function batchQualityMetrics(batch: TrainingKnowledgeBatchResponse | null) {
+  // 质量指标用于解释为什么会出现告警，弹窗里按中文标签展示。
+  return trainingKnowledgeQualityMetricItems(batch?.quality_report)
+}
+
+function openQualityWarningDialog(batch: TrainingKnowledgeBatchResponse) {
+  // 告警标签点击后只打开原因弹窗，不触发卡片上的其他操作。
+  activeQualityWarningBatch.value = batch
+  qualityWarningDialogVisible.value = true
+}
+
+function closeQualityWarningDialog() {
+  // 关闭弹窗时释放当前批次，避免下次打开前显示旧数据。
+  qualityWarningDialogVisible.value = false
+  activeQualityWarningBatch.value = null
+}
+
+function handleQualityWarningDialogVisibleChange(visible: boolean) {
+  // 兼容右上角关闭和遮罩关闭，统一释放当前批次。
+  if (visible) {
+    qualityWarningDialogVisible.value = true
+    return
+  }
+  closeQualityWarningDialog()
+}
+
+function searchBatchesByName() {
+  // 搜索只提交文件名关键词，分页和真实过滤交给父页面和后端处理。
+  emit('searchBatches', batchKeywordInput.value.trim())
+}
+
+function clearBatchNameSearch() {
+  // 清空搜索框后立即刷新列表，避免用户误以为列表仍处于过滤状态。
+  batchKeywordInput.value = ''
+  emit('searchBatches', '')
+}
 </script>
 
 <template>
@@ -99,7 +171,19 @@ function handleChunkStructureVisibleChange(visible: boolean) {
     <section class="training-panel">
       <div class="panel-title panel-title-between">
         <span><FileText :size="16" /> 已上传资料</span>
-        <el-button text :loading="loadingBatches" @click="emit('refreshBatches')">刷新</el-button>
+        <div class="batch-toolbar">
+          <el-input
+            v-model="batchKeywordInput"
+            class="batch-search-input"
+            clearable
+            placeholder="按文件名查询"
+            :prefix-icon="Search"
+            @keyup.enter="searchBatchesByName"
+            @clear="clearBatchNameSearch"
+          />
+          <el-button :icon="Search" type="primary" plain :loading="loadingBatches" @click="searchBatchesByName">查询</el-button>
+          <el-button text :loading="loadingBatches" @click="emit('refreshBatches')">刷新</el-button>
+        </div>
       </div>
       <div class="training-batch-layout">
         <div class="training-batch-list" v-loading="loadingBatches">
@@ -139,9 +223,28 @@ function handleChunkStructureVisibleChange(visible: boolean) {
                 重试入库
               </el-button>
             </div>
-            <div class="batch-item-meta">
-              <span>MD5 去重</span>
-              <code>{{ batch.file_md5 ? batch.file_md5.slice(0, 10) : '未记录' }}</code>
+            <div class="batch-meta-grid">
+              <div class="batch-score-meta">
+                <span>质量得分</span>
+                <strong>{{ batchQualitySummary(batch).scoreText }}</strong>
+              </div>
+              <div class="batch-item-meta">
+                <span>MD5 去重</span>
+                <code>{{ batch.file_md5 ? batch.file_md5.slice(0, 10) : '未记录' }}</code>
+              </div>
+            </div>
+            <div class="batch-quality-tags">
+              <span v-for="tag in batchQualityTags(batch).filter((item) => !item.startsWith('告警 '))" :key="tag">
+                {{ tag }}
+              </span>
+              <button
+                v-if="batchQualitySummary(batch).warningCount > 0"
+                type="button"
+                class="batch-warning-chip"
+                @click.stop="openQualityWarningDialog(batch)"
+              >
+                告警 {{ batchQualitySummary(batch).warningCount }} 条
+              </button>
             </div>
             <div class="batch-action-row" @click.stop>
               <el-button
@@ -211,16 +314,17 @@ function handleChunkStructureVisibleChange(visible: boolean) {
             <FileText :size="24" />
             <span>暂无训练资料。</span>
           </div>
-          <el-pagination
-            v-if="batchTotal > 0"
-            v-model:current-page="batchPage"
-            size="small"
-            layout="prev, pager, next"
-            :page-size="9"
-            :total="batchTotal"
-            @current-change="emit('refreshBatches')"
-          />
         </div>
+        <el-pagination
+          v-if="batchTotal > 0"
+          v-model:current-page="batchPage"
+          class="batch-pagination"
+          size="small"
+          layout="prev, pager, next"
+          :page-size="6"
+          :total="batchTotal"
+          @current-change="emit('refreshBatches')"
+        />
       </div>
     </section>
 
@@ -266,6 +370,45 @@ function handleChunkStructureVisibleChange(visible: boolean) {
       </section>
       <template #footer>
         <el-button @click="handleChunkStructureVisibleChange(false)">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      :model-value="qualityWarningDialogVisible"
+      width="620px"
+      class="profile-config-dialog quality-warning-dialog"
+      destroy-on-close
+      @update:model-value="handleQualityWarningDialogVisibleChange"
+    >
+      <template #header>
+        <div class="chunk-detail-title">
+          <Sparkles :size="20" />
+          <strong>质量告警</strong>
+          <span>{{ activeQualityWarningBatch?.source_file || '未选择资料' }}</span>
+        </div>
+      </template>
+      <section class="quality-warning-body">
+        <div class="quality-warning-summary">
+          <span>质量得分</span>
+          <strong>{{ activeQualityWarningBatch ? batchQualitySummary(activeQualityWarningBatch).scoreText : '-' }}</strong>
+          <em>{{ activeQualityWarningBatch ? batchQualitySummary(activeQualityWarningBatch).detailText : '暂无质量结论' }}</em>
+          <small>{{ activeQualityWarningBatch ? trainingKnowledgeSplitterLabel(activeQualityWarningBatch.quality_report) : '-' }}</small>
+        </div>
+        <div v-if="batchQualityWarnings(activeQualityWarningBatch).length" class="quality-warning-reasons">
+          <strong>原因</strong>
+          <ul>
+            <li v-for="warning in batchQualityWarnings(activeQualityWarningBatch)" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
+        <div v-if="batchQualityMetrics(activeQualityWarningBatch).length" class="quality-warning-metrics">
+          <span v-for="item in batchQualityMetrics(activeQualityWarningBatch)" :key="item.label">
+            <em>{{ item.label }}</em>
+            <strong>{{ item.value }}</strong>
+          </span>
+        </div>
+      </section>
+      <template #footer>
+        <el-button @click="closeQualityWarningDialog">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -472,10 +615,29 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   min-width: 0;
 }
 
+.panel-title-between {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: min(100%, 520px);
+}
+
+.batch-search-input {
+  width: clamp(180px, 28vw, 300px);
+}
+
 .training-batch-layout {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
   min-height: 0;
   overflow: hidden;
 }
@@ -488,12 +650,16 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding-right: 2px;
+  padding: 0 4px 8px 0;
 }
 
-.training-batch-list > .training-empty,
-.training-batch-list > .el-pagination {
+.training-batch-list > .training-empty {
   grid-column: 1 / -1;
+}
+
+.batch-pagination {
+  justify-content: flex-end;
+  min-height: 24px;
 }
 
 .training-batch-item {
@@ -560,6 +726,14 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   font-style: normal;
 }
 
+.batch-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.74fr) minmax(0, 1.26fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.batch-score-meta,
 .batch-item-meta {
   display: flex;
   align-items: center;
@@ -570,6 +744,73 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   border-radius: 10px;
   padding: 6px 8px;
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
+}
+
+.batch-score-meta span,
+.batch-item-meta span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.batch-score-meta strong {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.batch-item-meta code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cyan);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-quality-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.batch-quality-tags span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-strong) 62%, transparent);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-warning-chip {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #ff8a9a 46%, var(--line));
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: color-mix(in srgb, #ff8a9a 82%, var(--text));
+  background: color-mix(in srgb, #ff6b7a 8%, transparent);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.batch-warning-chip:hover,
+.batch-warning-chip:focus-visible {
+  border-color: color-mix(in srgb, #ff8a9a 78%, var(--line));
+  color: #ff9cab;
+  box-shadow: 0 0 14px color-mix(in srgb, #ff6b7a 18%, transparent);
+  outline: none;
 }
 
 .batch-task-progress {
@@ -604,20 +845,6 @@ function handleChunkStructureVisibleChange(visible: boolean) {
 
 .batch-task-progress span {
   color: var(--text-muted);
-}
-
-.batch-item-meta span {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.batch-item-meta code {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--cyan);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .batch-action-row {
@@ -769,6 +996,102 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   padding: 3px 8px;
   color: color-mix(in srgb, var(--text) 72%, var(--green));
   background: color-mix(in srgb, var(--green) 8%, transparent);
+  font-size: 12px;
+}
+
+.quality-warning-body {
+  display: grid;
+  gap: 12px;
+}
+
+.quality-warning-summary,
+.quality-warning-reasons,
+.quality-warning-metrics span {
+  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 52%),
+    color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+.quality-warning-summary {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.quality-warning-summary span,
+.quality-warning-summary small,
+.quality-warning-reasons li,
+.quality-warning-metrics em {
+  color: var(--text-muted);
+}
+
+.quality-warning-summary span,
+.quality-warning-metrics em {
+  font-size: 12px;
+  font-style: normal;
+}
+
+.quality-warning-summary strong {
+  color: var(--primary);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.quality-warning-summary em {
+  color: var(--text);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.quality-warning-reasons {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.quality-warning-reasons > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.quality-warning-reasons ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.quality-warning-reasons li {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.quality-warning-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quality-warning-metrics span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.quality-warning-metrics em,
+.quality-warning-metrics strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-warning-metrics strong {
+  color: var(--text);
   font-size: 12px;
 }
 
@@ -1028,24 +1351,27 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   flex-direction: column;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
-  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--cyan) 18%);
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
+  border-radius: 10px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 5%, transparent), transparent 46%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 46%),
     color-mix(in srgb, var(--surface) 96%, transparent);
-  box-shadow: 0 22px 60px color-mix(in srgb, #000 28%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cyan) 10%, transparent) inset,
+    0 18px 42px color-mix(in srgb, #000 36%, transparent),
+    0 0 30px color-mix(in srgb, var(--cyan) 12%, transparent);
 }
 
 :deep(.profile-config-dialog .el-dialog__header) {
   flex: 0 0 auto;
   margin: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  padding: 18px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 12px 14px 10px;
 }
 
 :deep(.profile-config-dialog .el-dialog__title) {
   color: var(--text);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -1053,18 +1379,30 @@ function handleChunkStructureVisibleChange(visible: boolean) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 18px 20px;
+  padding: 12px 14px;
 }
 
 :deep(.profile-config-dialog .el-dialog__footer) {
   flex: 0 0 auto;
-  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  padding: 14px 20px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 10px 14px 12px;
 }
 
 @container (max-width: 520px) {
   .training-batch-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel-title-between {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-toolbar {
+    justify-content: stretch;
+  }
+
+  .batch-search-input {
+    width: 100%;
   }
 }
 

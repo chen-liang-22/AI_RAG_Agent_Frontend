@@ -229,12 +229,6 @@ export interface TrainingGoalSettingResponse { // 训练目标设置
 
 export interface TrainingPlanCreatePayload { // 创建销售训练方案
   plan_name: string
-  trainee: TrainingTraineeProfilePayload
-  profile_type: string
-  selected_fields: Record<string, unknown>
-  scenario_description: string
-  extra_details: string
-  model_mode?: string | null
 }
 
 export interface TrainingPlanUpdatePayload { // 修改销售训练方案

@@ -72,11 +72,15 @@ export function listTrainingKnowledgeBatchVersions(batchId: string) { // 查询�
   return request<TrainingKnowledgeVersionListResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/versions`)
 }
 
-export function listTrainingKnowledgeBatches(page = 1, pageSize = 10) { // 查询训练资料上传历史
+export function listTrainingKnowledgeBatches(page = 1, pageSize = 10, keyword = '') { // 查询训练资料上传历史
   const params = new URLSearchParams({
     page: String(page),
     page_size: String(pageSize),
   })
+  const cleanKeyword = keyword.trim()
+  if (cleanKeyword) {
+    params.set('keyword', cleanKeyword)
+  }
   return request<TrainingKnowledgeBatchListResponse>(`/training/knowledge/batches?${params.toString()}`)
 }
 

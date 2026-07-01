@@ -2112,23 +2112,63 @@ button, input, textarea { font: inherit; }
 .el-dialog {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
+  border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cyan) 10%, transparent) inset,
+    0 18px 42px color-mix(in srgb, #000 36%, transparent),
+    0 0 30px color-mix(in srgb, var(--cyan) 12%, transparent);
   margin: 0 !important;
 }
 
 .el-dialog__header,
 .el-dialog__footer {
   flex: 0 0 auto;
+  margin: 0;
+  border-color: color-mix(in srgb, var(--cyan) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-strong) 58%, transparent);
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 12px 14px 10px;
+}
+
+.el-dialog__title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.el-dialog__headerbtn {
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
 }
 
 .el-dialog__body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  padding: 12px 14px;
+}
+
+.el-dialog__footer {
+  border-top: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 10px 14px 12px;
 }
 
 .el-overlay-message-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   padding: 16px;
 }
@@ -2136,15 +2176,95 @@ button, input, textarea { font: inherit; }
 .el-message-box {
   display: flex;
   flex-direction: column;
+  width: min(420px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--cyan) 38%, var(--line));
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 10%, transparent), transparent 52%),
+    color-mix(in srgb, var(--surface) 98%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cyan) 10%, transparent) inset,
+    0 18px 46px color-mix(in srgb, #000 42%, transparent),
+    0 0 34px color-mix(in srgb, var(--cyan) 13%, transparent);
   margin: 0 !important;
+  padding: 0;
+}
+
+.el-message-box__header {
+  border-bottom: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 12px 14px 8px;
+  background: color-mix(in srgb, var(--surface-strong) 62%, transparent);
+}
+
+.el-message-box__title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.el-message-box__headerbtn {
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
 }
 
 .el-message-box__content {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  padding: 8px 14px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.el-message-box__container {
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.el-message-box__status {
+  margin-top: 1px;
+  font-size: 18px !important;
+}
+
+.el-message-box__message {
+  padding-left: 0;
+}
+
+.el-message-box__message p {
+  margin: 0;
+}
+
+.el-message-box__btns {
+  border-top: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 8px 14px 14px;
+  background: color-mix(in srgb, var(--surface-strong) 48%, transparent);
+}
+
+.el-message-box__btns .el-button {
+  min-height: 30px;
+  border-radius: 6px;
+  padding: 0 13px;
+  font-size: 12px;
+}
+
+.el-message-box:has(.el-message-box-icon--warning),
+.el-message-box:has(.el-icon.el-message-box__status.el-message-box-icon--warning) {
+  border-color: color-mix(in srgb, #f6c65b 48%, var(--line));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #f6c65b 12%, transparent) inset,
+    0 18px 46px color-mix(in srgb, #000 42%, transparent),
+    0 0 34px color-mix(in srgb, #f6c65b 13%, transparent);
+}
+
+.el-message-box-icon--warning {
+  color: #f6c65b !important;
 }
 
 .el-drawer {

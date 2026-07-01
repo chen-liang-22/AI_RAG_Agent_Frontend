@@ -98,6 +98,7 @@ import {
   trainingIngestStepLabel,
 } from '../composables/trainingIngestTask'
 import { buildTrainingBatchFromUploadResult, retryTrainingIngestTaskForBatch } from '../composables/trainingIngestRetry'
+import { trainingKnowledgeSplitterLabel } from '../composables/trainingKnowledgeDisplay'
 import TrainingKnowledgeWorkspace from '../components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadPanel.vue'
 import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
@@ -229,6 +230,8 @@ const chunks = ref<TrainingKnowledgeChunkResponse[]>([])
 const trainingBatches = ref<TrainingKnowledgeBatchResponse[]>([])
 const batchTotal = ref(0)
 const batchPage = ref(1)
+const batchKeywordInput = ref('')
+const batchKeyword = ref('')
 const activeBatchId = ref('')
 const loadingBatches = ref(false)
 const loadingChunks = ref(false)
@@ -260,6 +263,8 @@ const studentPortraitOther = ref('')
 const modelMode = ref('high')
 const scenarioDescription = ref('客户正在评估新的业务增长方案，但担心成本投入、交付风险和团队执行压力。')
 const extraDetails = ref('学员需要通过提问挖掘客户真实顾虑，并用案例化表达争取客户愿意继续沟通。')
+const traineeProfileConfirmed = ref(false)
+const customerProfileConfirmed = ref(false)
 
 const planName = ref('')
 const activePlan = ref<TrainingPlanSummaryResponse | null>(null)
@@ -321,12 +326,7 @@ const canClearUploadArea = computed(() => Boolean(selectedFile.value || uploadRe
 const uploadQualityReport = computed(() => uploadResult.value?.quality_report || {})
 const uploadQualityWarnings = computed(() => safeList(uploadQualityReport.value.warnings))
 const uploadQualityMetrics = computed(() => (uploadQualityReport.value.metrics || {}) as Record<string, unknown>)
-const uploadQualitySplitText = computed(() => {
-  const splitter = String(uploadQualityReport.value.selected_splitter || '')
-  if (splitter === 'llm_fallback') return 'LLM 兜底切分'
-  if (uploadQualityReport.value.llm_fallback_attempted) return '规则切分，已尝试 LLM 兜底'
-  return '规则配置切分'
-})
+const uploadQualitySplitText = computed(() => trainingKnowledgeSplitterLabel(uploadQualityReport.value))
 const uploadPublishValidation = computed(() => (
   uploadQualityReport.value.publish_validation || null
 ) as Record<string, unknown> | null)
@@ -336,6 +336,7 @@ const canOpenScoreSetup = computed(() => Boolean(goalSetting.value))
 const planFlowStatusText = computed(() => activePlan.value ? '已创建' : '待创建')
 const roleFlowStatusText = computed(() => {
   if (!activePlan.value) return '先建名称'
+  if (!traineeProfileConfirmed.value || !customerProfileConfirmed.value) return '先配画像'
   return roleResult.value ? '已生成' : '待生成'
 })
 const stageFlowStatusText = computed(() => goalSetting.value ? `${goalSetting.value.round_limit} 轮` : roleResult.value ? '待生成' : '先生成角色')
@@ -670,6 +671,8 @@ const customerProfileTags = computed(() => {
   })
   return uniqueList(fieldValues).slice(0, 18)
 })
+const traineeProfileDisplayTags = computed(() => (traineeProfileConfirmed.value ? traineeProfileTags.value : []))
+const customerProfileDisplayTags = computed(() => (customerProfileConfirmed.value ? customerProfileTags.value : []))
 const scenarioPreviewText = computed(() => compactText(scenarioDescription.value))
 const extraDetailsPreviewText = computed(() => compactText(extraDetails.value || '未填写'))
 const goalStage = computed(() => goalSetting.value?.stages?.[0])
@@ -1202,11 +1205,12 @@ function confirmTraineeProfileDialog() {
   taskGoal.value = traineeProfileDraft.value.taskGoal || 'goal_junior'
   weaknessTagsValue.value = [...traineeProfileDraft.value.weaknessTags]
   studentPortraitOther.value = traineeProfileDraft.value.studentPortraitOther.trim()
+  traineeProfileConfirmed.value = true
   traineeProfileDialogVisible.value = false
 }
 
 function openCustomerProfileDialog() {
-  draftProfileType.value = profileType.value
+  draftProfileType.value = profileType.value || selectedProfileTemplate.value?.item_code || DEFAULT_CUSTOMER_PROFILE_TYPE
   draftCustomerProfileValues.value = { ...customerProfileValues.value }
   draftScenarioDescription.value = scenarioDescription.value
   draftExtraDetails.value = extraDetails.value
@@ -1227,6 +1231,7 @@ function confirmCustomerProfileDialog() {
   extraDetails.value = draftExtraDetails.value.trim()
   modelMode.value = draftModelMode.value
   syncCustomerProfileDefaults()
+  customerProfileConfirmed.value = true
   customerProfileDialogVisible.value = false
 }
 
@@ -1268,21 +1273,18 @@ async function createPlanFromCurrentInput() {
     ElMessage.warning('请先输入训练名称')
     return
   }
-  if (!scenarioDescription.value.trim()) {
-    ElMessage.warning('请填写训练场景描述')
-    return
-  }
 
   creatingPlan.value = true
   try {
     const detail = await createTrainingPlan({
       plan_name: planName.value.trim(),
-      ...currentPlanPayload(),
     })
     hydratePlanDetail(detail)
+    traineeProfileConfirmed.value = false
+    customerProfileConfirmed.value = false
     activeSetupTab.value = 'role'
     await refreshTrainingPlans()
-    ElMessage.success('训练方案已创建')
+    ElMessage.success('训练名称已创建，请继续配置画像和场景')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练方案创建失败')
   } finally {
@@ -1302,11 +1304,13 @@ function hydratePlanDetail(detail: TrainingPlanDetailResponse) {
   taskGoal.value = String(trainee.task_goal || taskGoal.value)
   weaknessTagsValue.value = Array.isArray(trainee.weakness_tags) ? trainee.weakness_tags.map(String) : weaknessTagsValue.value
   studentPortraitOther.value = String(trainee.student_portrait_other || '')
-  profileType.value = detail.plan.profile_type
+  profileType.value = detail.plan.profile_type || profileType.value || DEFAULT_CUSTOMER_PROFILE_TYPE
   restoreCustomerProfileValuesFromDisplay(detail.selected_fields)
   modelMode.value = detail.plan.model_mode || modelMode.value
   scenarioDescription.value = detail.scenario_description
   extraDetails.value = detail.extra_details
+  traineeProfileConfirmed.value = hasDisplayValue(trainee.trainee_id) || hasDisplayValue(trainee.trainee_name)
+  customerProfileConfirmed.value = hasDisplayValue(detail.selected_fields) && hasDisplayValue(detail.scenario_description)
   roleResult.value = detail.plan.active_profile_id ? {
     profile_id: detail.plan.active_profile_id,
     visible_profile: detail.visible_profile,
@@ -1330,6 +1334,8 @@ function resetActiveTrainingPlanState() {
   goalSetting.value = null
   activeSession.value = null
   scoreResult.value = null
+  traineeProfileConfirmed.value = false
+  customerProfileConfirmed.value = false
   messages.value = []
   retrievedChunkIds.value = []
   stageStatus.value = '未开始'
@@ -1444,7 +1450,6 @@ async function openTrainingPlan(plan: TrainingPlanSummaryResponse) {
     const detail = await getTrainingPlanDetail(plan.plan_id)
     hydratePlanDetail(detail)
     activeSetupTab.value = 'role'
-    planDetailVisible.value = true
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '训练方案详情读取失败')
   }
@@ -1763,6 +1768,40 @@ function buildRoleGeneratePayload(extraDetailText = extraDetails.value) {
   }
 }
 
+// 生成 AI 客户前先把用户确认过的画像和场景写回训练方案，避免创建名称时保存默认画像。
+async function saveCurrentPlanProfileSnapshot() {
+  if (!activePlan.value) {
+    ElMessage.warning('请先输入训练名称并创建训练方案')
+    return false
+  }
+  if (!traineeProfileConfirmed.value) {
+    ElMessage.warning('请先确认学员画像')
+    openTraineeProfileDialog()
+    return false
+  }
+  if (!customerProfileConfirmed.value) {
+    ElMessage.warning('请先确认客户画像和训练场景')
+    openCustomerProfileDialog()
+    return false
+  }
+  if (!scenarioDescription.value.trim()) {
+    ElMessage.warning('请填写训练场景描述')
+    openCustomerProfileDialog()
+    return false
+  }
+
+  const detail = await updateTrainingPlan(activePlan.value.plan_id, {
+    ...currentPlanPayload(),
+    scenario_description: scenarioDescription.value.trim(),
+    extra_details: extraDetails.value.trim(),
+  })
+  hydratePlanDetail(detail)
+  traineeProfileConfirmed.value = true
+  customerProfileConfirmed.value = true
+  await refreshTrainingPlans()
+  return true
+}
+
 function resetSupplementAnswers(questions: TrainingSupplementQuestion[]) {
   supplementAnswers.value = Object.fromEntries(
     questions.map((question) => [question.question_id, question.options[0]?.option_code || '']),
@@ -1814,6 +1853,11 @@ function goNextSetupStep() {
       return
     }
     activeSetupTab.value = 'role'
+    if (!traineeProfileConfirmed.value) {
+      openTraineeProfileDialog()
+    } else if (!customerProfileConfirmed.value) {
+      openCustomerProfileDialog()
+    }
     return
   }
   if (activeSetupTab.value === 'role') {
@@ -2087,8 +2131,8 @@ async function openBatchVersions(batch: TrainingKnowledgeBatchResponse) {
 async function refreshTrainingBatches() {
   loadingBatches.value = true
   try {
-    // 资料管理每页展示 3 列 x 3 行，按导入时间倒序排列。
-    const response = await listTrainingKnowledgeBatches(batchPage.value, 9)
+    // 资料管理每页展示 6 条，文件名过滤交给后端分页查询，避免只过滤当前页。
+    const response = await listTrainingKnowledgeBatches(batchPage.value, 6, batchKeyword.value)
     // 删除最后一页最后一条数据后，当前页可能为空；这里自动回退一页。
     if (response.items.length === 0 && response.total > 0 && batchPage.value > 1) {
       batchPage.value -= 1
@@ -2108,6 +2152,14 @@ async function refreshTrainingBatches() {
   } finally {
     loadingBatches.value = false
   }
+}
+
+async function searchTrainingBatches(keyword: string) {
+  // 文件名查询从第一页开始，防止用户停留在旧分页导致看不到命中结果。
+  batchKeyword.value = keyword.trim()
+  batchKeywordInput.value = batchKeyword.value
+  batchPage.value = 1
+  await refreshTrainingBatches()
 }
 
 async function openTrainingBatch(batch: TrainingKnowledgeBatchResponse) {
@@ -2197,13 +2249,11 @@ async function prepareRoleGeneration() {
     ElMessage.warning('请先输入训练名称并创建训练方案')
     return
   }
-  if (!scenarioDescription.value.trim()) {
-    ElMessage.warning('请填写训练场景描述')
-    return
-  }
 
   generatingSupplementQuestions.value = true
   try {
+    const saved = await saveCurrentPlanProfileSnapshot()
+    if (!saved) return
     const response = await generateTrainingSupplementQuestions(buildRoleGeneratePayload())
     supplementQuestions.value = response.questions || []
     resetSupplementAnswers(supplementQuestions.value)
@@ -2545,11 +2595,16 @@ onMounted(() => {
 
 <template>
   <div class="sales-training-page">
-    <header class="page-hero sales-training-hero">
+    <header class="page-hero sales-training-hero" :class="{ compact: activeWorkspaceTab === 'knowledge' }">
       <div>
-        <span class="page-kicker"><BrainCircuit :size="16" /> AI 销售陪练</span>
-        <h2>客户画像驱动的开放式训练</h2>
-        <p>把 LMS 案例写入训练向量库，由模型生成 AI 客户、训练目标和动态轮数，再通过文字对话锻炼销售沟通能力。</p>
+        <span class="page-kicker">
+          <component :is="activeWorkspaceTab === 'knowledge' ? UploadCloud : BrainCircuit" :size="16" />
+          {{ activeWorkspaceTab === 'knowledge' ? '资料管理' : 'AI 销售陪练' }}
+        </span>
+        <h2>{{ activeWorkspaceTab === 'knowledge' ? '训练资料管理' : '客户画像驱动的开放式训练' }}</h2>
+        <p v-if="activeWorkspaceTab !== 'knowledge'">
+          把 LMS 案例写入训练向量库，由模型生成 AI 客户、训练目标和动态轮数，再通过文字对话锻炼销售沟通能力。
+        </p>
       </div>
       <div class="training-hero-actions">
         <button
@@ -2562,9 +2617,11 @@ onMounted(() => {
           资料管理
           <em>{{ batchTotal > 0 ? `${batchTotal} 批` : '待上传' }}</em>
         </button>
-        <span class="hero-chip"><Network :size="15" /> 向量库 sales_training_cases</span>
-        <span class="hero-chip"><Route :size="15" /> 向导式创建</span>
-        <span class="hero-chip"><ShieldCheck :size="15" /> 文字训练</span>
+        <template v-if="activeWorkspaceTab !== 'knowledge'">
+          <span class="hero-chip"><Network :size="15" /> 向量库 sales_training_cases</span>
+          <span class="hero-chip"><Route :size="15" /> 向导式创建</span>
+          <span class="hero-chip"><ShieldCheck :size="15" /> 文字训练</span>
+        </template>
       </div>
     </header>
 
@@ -2615,7 +2672,7 @@ onMounted(() => {
           </button>
         </section>
 
-        <nav class="training-workspace-nav" aria-label="销售训练工作区">
+        <nav v-if="activeWorkspaceTab !== 'knowledge'" class="training-workspace-nav" aria-label="销售训练工作区">
           <button
             v-for="item in trainingWorkspaceNavItems"
             :key="item.key"
@@ -2638,6 +2695,7 @@ onMounted(() => {
     <TrainingKnowledgeWorkspace
       v-show="activeWorkspaceTab === 'knowledge'"
       v-model:batch-page="batchPage"
+      v-model:batch-keyword-input="batchKeywordInput"
       v-model:chunk-structure-visible="chunkStructureVisible"
       v-model:chunk-detail-visible="chunkDetailVisible"
       v-model:version-dialog-visible="versionDialogVisible"
@@ -2669,6 +2727,7 @@ onMounted(() => {
       :case-part-label="casePartLabel"
       :chunk-detail-meta="chunkDetailMeta"
       @refresh-batches="refreshTrainingBatches"
+      @search-batches="searchTrainingBatches"
       @publish-batch="publishTrainingBatch"
       @reparse-batch="reparseTrainingBatch"
       @retry-task="retryTrainingIngestTask"
@@ -2705,14 +2764,14 @@ onMounted(() => {
         <section v-if="activePlan && activeSetupTab !== 'plan'" class="training-panel profile-summary-panel">
           <div class="panel-title panel-title-between">
             <span><UserRoundCheck :size="16" /> 学员画像</span>
-            <em>{{ traineeName }}</em>
+            <em>{{ traineeProfileConfirmed ? traineeName : '未配置' }}</em>
           </div>
           <div class="profile-chip-cloud">
-            <span v-for="tag in traineeProfileTags" :key="`trainee-${tag}`" :title="tag">{{ compactText(tag) }}</span>
-            <span v-if="traineeProfileTags.length === 0">未配置</span>
+            <span v-for="tag in traineeProfileDisplayTags" :key="`trainee-${tag}`" :title="tag">{{ compactText(tag) }}</span>
+            <span v-if="traineeProfileDisplayTags.length === 0">未配置</span>
           </div>
           <el-button class="tech-button primary" @click="openTraineeProfileDialog">
-            修改学员画像
+            {{ traineeProfileConfirmed ? '修改学员画像' : '配置学员画像' }}
           </el-button>
         </section>
       </aside>
@@ -3017,15 +3076,15 @@ onMounted(() => {
         <section class="training-panel customer-profile-panel profile-summary-panel" v-loading="loadingProfileDictionaries">
           <div class="panel-title panel-title-between">
             <span><Radar :size="16" /> 客户画像</span>
-            <em>{{ selectedProfileTemplate?.item_name || '未选择' }}</em>
+            <em>{{ customerProfileConfirmed ? selectedProfileTemplate?.item_name || '已配置' : '未配置' }}</em>
           </div>
           <div class="profile-template-summary">
             <BrainCircuit :size="15" />
             <span>{{ selectedProfileScenario }}</span>
           </div>
           <div class="profile-chip-cloud customer">
-            <span v-for="tag in customerProfileTags" :key="`customer-${tag}`" :title="tag">{{ compactText(tag) }}</span>
-            <span v-if="customerProfileTags.length === 0">未配置</span>
+            <span v-for="tag in customerProfileDisplayTags" :key="`customer-${tag}`" :title="tag">{{ compactText(tag) }}</span>
+            <span v-if="customerProfileDisplayTags.length === 0">未配置</span>
           </div>
           <div class="profile-summary-meta">
             <span>模型档位：{{ modelModeLabel }}</span>
@@ -3033,7 +3092,7 @@ onMounted(() => {
             <span :title="extraDetails || '未填写'">补充细节：{{ extraDetailsPreviewText }}</span>
           </div>
           <el-button class="tech-button primary" @click="openCustomerProfileDialog">
-            修改客户画像
+            {{ customerProfileConfirmed ? '修改客户画像' : '配置客户画像' }}
           </el-button>
         </section>
       </aside>
@@ -3934,6 +3993,16 @@ onMounted(() => {
   min-height: 112px;
 }
 
+.sales-training-hero.compact {
+  min-height: 74px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.sales-training-hero.compact h2 {
+  margin-bottom: 0;
+}
+
 .training-console-layout {
   display: grid;
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
@@ -4292,6 +4361,11 @@ onMounted(() => {
   padding-right: 2px;
 }
 
+.training-right-panel {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  scrollbar-gutter: stable;
+}
+
 @media (min-width: 1321px) {
   .training-left-panel,
   .training-right-panel {
@@ -4500,7 +4574,9 @@ onMounted(() => {
 }
 
 .training-right-panel .customer-profile-panel {
-  overflow: hidden;
+  max-height: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable;
   border-color: color-mix(in srgb, var(--cyan) 30%, var(--line));
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 38%),
@@ -4591,10 +4667,11 @@ onMounted(() => {
 
 .training-right-panel .customer-profile-panel .training-action-row {
   position: sticky;
-  bottom: -13px;
-  margin: 12px -13px -13px;
+  bottom: 0;
+  z-index: 2;
+  margin: 12px 0 0;
   border-top: 1px solid color-mix(in srgb, var(--cyan) 18%, transparent);
-  padding: 10px 13px 13px;
+  padding: 10px 13px calc(13px + env(safe-area-inset-bottom));
   background:
     linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface) 94%, transparent) 18%),
     color-mix(in srgb, var(--surface) 96%, transparent);
@@ -4624,24 +4701,27 @@ onMounted(() => {
   flex-direction: column;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
-  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--cyan) 18%);
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
+  border-radius: 10px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 5%, transparent), transparent 46%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 46%),
     color-mix(in srgb, var(--surface) 96%, transparent);
-  box-shadow: 0 22px 60px color-mix(in srgb, #000 28%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cyan) 10%, transparent) inset,
+    0 18px 42px color-mix(in srgb, #000 36%, transparent),
+    0 0 30px color-mix(in srgb, var(--cyan) 12%, transparent);
 }
 
 :deep(.profile-config-dialog .el-dialog__header) {
   flex: 0 0 auto;
   margin: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  padding: 18px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 12px 14px 10px;
 }
 
 :deep(.profile-config-dialog .el-dialog__title) {
   color: var(--text);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -4649,13 +4729,13 @@ onMounted(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 18px 20px;
+  padding: 12px 14px;
 }
 
 :deep(.profile-config-dialog .el-dialog__footer) {
   flex: 0 0 auto;
-  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  padding: 14px 20px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line));
+  padding: 10px 14px 12px;
 }
 
 .profile-dialog-body {
