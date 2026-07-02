@@ -56,6 +56,8 @@ const props = defineProps<{
   trainingPreview: TrainingKnowledgePreviewResponse | null
   trainingPreviewLoading: boolean
   themeMode?: 'dark' | 'light'
+  listDensity?: 'comfortable' | 'compact'
+  pageSize?: number
   loadingBatches: boolean
   loadingChunks: boolean
   publishingBatchId: string
@@ -167,7 +169,7 @@ function clearBatchNameSearch() {
 </script>
 
 <template>
-  <section class="training-knowledge-workspace">
+  <section class="training-knowledge-workspace" :class="{ 'compact-list': props.listDensity === 'compact' }">
     <section class="training-panel">
       <div class="panel-title panel-title-between">
         <span><FileText :size="16" /> 已上传资料</span>
@@ -321,7 +323,7 @@ function clearBatchNameSearch() {
           class="batch-pagination"
           size="small"
           layout="prev, pager, next"
-          :page-size="6"
+          :page-size="props.pageSize || 6"
           :total="batchTotal"
           @current-change="emit('refreshBatches')"
         />
@@ -887,6 +889,106 @@ function clearBatchNameSearch() {
   box-shadow: 0 0 16px color-mix(in srgb, #ff6b7a 18%, transparent);
 }
 
+.training-knowledge-workspace.compact-list .training-panel {
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.training-knowledge-workspace.compact-list .training-batch-layout {
+  gap: 8px;
+}
+
+.training-knowledge-workspace.compact-list .training-batch-list {
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 0 6px 8px 0;
+}
+
+.training-knowledge-workspace.compact-list .training-batch-item {
+  grid-template-areas:
+    "main meta actions"
+    "tags tags actions"
+    "task task actions";
+  grid-template-columns: minmax(0, 1.2fr) minmax(230px, 0.8fr) 210px;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 96px;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.training-knowledge-workspace.compact-list .training-batch-item.active::before {
+  inset: 8px auto 8px 7px;
+}
+
+.training-knowledge-workspace.compact-list .training-batch-item.active .batch-item-main strong,
+.training-knowledge-workspace.compact-list .training-batch-item.active .batch-item-main span,
+.training-knowledge-workspace.compact-list .training-batch-item.active .batch-item-main em {
+  padding-left: 9px;
+}
+
+.training-knowledge-workspace.compact-list .batch-item-main {
+  grid-area: main;
+  gap: 3px;
+}
+
+.training-knowledge-workspace.compact-list .batch-meta-grid {
+  grid-area: meta;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.training-knowledge-workspace.compact-list .batch-score-meta,
+.training-knowledge-workspace.compact-list .batch-item-meta {
+  min-height: 34px;
+  gap: 8px;
+  padding: 6px 9px;
+}
+
+.training-knowledge-workspace.compact-list .batch-score-meta span,
+.training-knowledge-workspace.compact-list .batch-item-meta span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.training-knowledge-workspace.compact-list .batch-score-meta strong,
+.training-knowledge-workspace.compact-list .batch-item-meta code {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.training-knowledge-workspace.compact-list .batch-quality-tags {
+  grid-area: tags;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.training-knowledge-workspace.compact-list .batch-quality-tags span,
+.training-knowledge-workspace.compact-list .batch-warning-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.training-knowledge-workspace.compact-list .batch-task-progress {
+  grid-area: task;
+  padding: 7px 9px;
+}
+
+.training-knowledge-workspace.compact-list .batch-action-row {
+  grid-area: actions;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: stretch;
+  width: 210px;
+  gap: 8px;
+}
+
+.training-knowledge-workspace.compact-list .batch-icon-button.el-button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .chunk-summary-list {
   display: grid;
   gap: 8px;
@@ -1389,6 +1491,20 @@ function clearBatchNameSearch() {
 }
 
 @container (max-width: 520px) {
+  .training-knowledge-workspace.compact-list .training-batch-item {
+    grid-template-areas:
+      "main"
+      "meta"
+      "tags"
+      "task"
+      "actions";
+    grid-template-columns: 1fr;
+  }
+
+  .training-knowledge-workspace.compact-list .batch-action-row {
+    width: 100%;
+  }
+
   .training-batch-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -96,10 +96,6 @@ function toggleTheme() {
         <strong>续签会话</strong>
         <span>HttpOnly Cookie · Redis · 7 天</span>
       </div>
-      <div>
-        <strong>默认账号</strong>
-        <span>admin / 1234qwer</span>
-      </div>
     </aside>
   </main>
 </template>

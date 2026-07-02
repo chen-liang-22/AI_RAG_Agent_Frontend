@@ -2607,6 +2607,17 @@ onMounted(() => {
         </p>
       </div>
       <div class="training-hero-actions">
+        <section v-if="activePlan && activeWorkspaceTab !== 'knowledge'" class="hero-active-plan">
+          <div>
+            <span><Route :size="15" /> 当前训练</span>
+            <strong>{{ activePlan.plan_name }}</strong>
+            <em>角色：{{ activePlan.role_status }} · 阶段：{{ activePlan.goal_status }} · 评分：{{ activePlan.score_status }}</em>
+          </div>
+          <div>
+            <el-button text @click="planDetailVisible = true">详情</el-button>
+            <el-button text @click="openSetupTab('plan')">切换</el-button>
+          </div>
+        </section>
         <button
           type="button"
           class="hero-chip hero-chip-button"
@@ -2617,11 +2628,6 @@ onMounted(() => {
           资料管理
           <em>{{ batchTotal > 0 ? `${batchTotal} 批` : '待上传' }}</em>
         </button>
-        <template v-if="activeWorkspaceTab !== 'knowledge'">
-          <span class="hero-chip"><Network :size="15" /> 向量库 sales_training_cases</span>
-          <span class="hero-chip"><Route :size="15" /> 向导式创建</span>
-          <span class="hero-chip"><ShieldCheck :size="15" /> 文字训练</span>
-        </template>
       </div>
     </header>
 
@@ -2743,39 +2749,8 @@ onMounted(() => {
     <section
       v-show="activeWorkspaceTab === 'setup'"
       class="training-workspace"
-      :class="{ 'plan-step-workspace': activeSetupTab === 'plan', 'has-left-panel': Boolean(activePlan) }"
+      :class="{ 'plan-step-workspace': activeSetupTab === 'plan' }"
     >
-      <aside v-if="activePlan" class="training-left-panel">
-        <section v-if="activePlan" class="training-panel active-plan-brief">
-          <div class="panel-title panel-title-between">
-            <span><Route :size="16" /> 当前训练</span>
-            <em>已选择</em>
-          </div>
-          <div class="active-plan-card">
-            <strong>{{ activePlan.plan_name }}</strong>
-            <span>角色：{{ activePlan.role_status }} · 阶段：{{ activePlan.goal_status }} · 评分：{{ activePlan.score_status }}</span>
-            <div>
-              <el-button text @click="planDetailVisible = true">查看详情</el-button>
-              <el-button text @click="openSetupTab('plan')">切换</el-button>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="activePlan && activeSetupTab !== 'plan'" class="training-panel profile-summary-panel">
-          <div class="panel-title panel-title-between">
-            <span><UserRoundCheck :size="16" /> 学员画像</span>
-            <em>{{ traineeProfileConfirmed ? traineeName : '未配置' }}</em>
-          </div>
-          <div class="profile-chip-cloud">
-            <span v-for="tag in traineeProfileDisplayTags" :key="`trainee-${tag}`" :title="tag">{{ compactText(tag) }}</span>
-            <span v-if="traineeProfileDisplayTags.length === 0">未配置</span>
-          </div>
-          <el-button class="tech-button primary" @click="openTraineeProfileDialog">
-            {{ traineeProfileConfirmed ? '修改学员画像' : '配置学员画像' }}
-          </el-button>
-        </section>
-      </aside>
-
       <section class="training-main-panel">
         <section class="setup-flow-tabs" aria-label="创建训练步骤">
           <button
@@ -2826,6 +2801,64 @@ onMounted(() => {
               <em>{{ scoreFlowStatusText }}</em>
             </span>
           </button>
+        </section>
+
+        <section v-if="activePlan && activeSetupTab !== 'plan'" class="profile-summary-strip">
+          <article class="profile-summary-bar trainee">
+            <span class="profile-summary-icon">
+              <UserRoundCheck :size="16" />
+            </span>
+            <div class="profile-summary-content">
+              <div class="profile-summary-head">
+                <strong>学员画像</strong>
+                <em>{{ traineeProfileConfirmed ? traineeName : '未配置' }}</em>
+              </div>
+              <div class="profile-summary-tags">
+                <span
+                  v-for="tag in traineeProfileDisplayTags"
+                  :key="`trainee-strip-${tag}`"
+                  :title="tag"
+                >
+                  {{ compactText(tag) }}
+                </span>
+                <span v-if="traineeProfileDisplayTags.length === 0">未配置</span>
+              </div>
+            </div>
+            <el-button class="tech-button compact" @click="openTraineeProfileDialog">
+              {{ traineeProfileConfirmed ? '修改' : '配置' }}
+            </el-button>
+          </article>
+
+          <article class="profile-summary-bar customer" v-loading="loadingProfileDictionaries">
+            <span class="profile-summary-icon">
+              <Radar :size="16" />
+            </span>
+            <div class="profile-summary-content">
+              <div class="profile-summary-head">
+                <strong>客户画像</strong>
+                <em>{{ customerProfileConfirmed ? selectedProfileTemplate?.item_name || '已配置' : '未配置' }}</em>
+              </div>
+              <div class="profile-summary-tags customer">
+                <span
+                  v-for="tag in customerProfileDisplayTags"
+                  :key="`customer-strip-${tag}`"
+                  :title="tag"
+                >
+                  {{ compactText(tag) }}
+                </span>
+                <span v-if="customerProfileDisplayTags.length === 0">未配置</span>
+              </div>
+              <div class="profile-summary-meta compact">
+                <span>模型：{{ modelModeLabel }}</span>
+                <span :title="selectedProfileScenario">摘要：{{ selectedProfileScenario }}</span>
+                <span :title="scenarioDescription">场景：{{ scenarioPreviewText }}</span>
+                <span :title="extraDetails || '未填写'">补充：{{ extraDetailsPreviewText }}</span>
+              </div>
+            </div>
+            <el-button class="tech-button compact" @click="openCustomerProfileDialog">
+              {{ customerProfileConfirmed ? '修改' : '配置' }}
+            </el-button>
+          </article>
         </section>
 
         <section class="setup-flow-content">
@@ -3071,31 +3104,6 @@ onMounted(() => {
         </section>
 
       </section>
-
-      <aside v-if="activePlan && activeSetupTab !== 'plan'" class="training-right-panel">
-        <section class="training-panel customer-profile-panel profile-summary-panel" v-loading="loadingProfileDictionaries">
-          <div class="panel-title panel-title-between">
-            <span><Radar :size="16" /> 客户画像</span>
-            <em>{{ customerProfileConfirmed ? selectedProfileTemplate?.item_name || '已配置' : '未配置' }}</em>
-          </div>
-          <div class="profile-template-summary">
-            <BrainCircuit :size="15" />
-            <span>{{ selectedProfileScenario }}</span>
-          </div>
-          <div class="profile-chip-cloud customer">
-            <span v-for="tag in customerProfileDisplayTags" :key="`customer-${tag}`" :title="tag">{{ compactText(tag) }}</span>
-            <span v-if="customerProfileDisplayTags.length === 0">未配置</span>
-          </div>
-          <div class="profile-summary-meta">
-            <span>模型档位：{{ modelModeLabel }}</span>
-            <span :title="scenarioDescription">场景描述：{{ scenarioPreviewText }}</span>
-            <span :title="extraDetails || '未填写'">补充细节：{{ extraDetailsPreviewText }}</span>
-          </div>
-          <el-button class="tech-button primary" @click="openCustomerProfileDialog">
-            {{ customerProfileConfirmed ? '修改客户画像' : '配置客户画像' }}
-          </el-button>
-        </section>
-      </aside>
     </section>
 
     <section v-show="activeWorkspaceTab === 'chat'" class="training-chat-workspace">
@@ -3993,6 +4001,10 @@ onMounted(() => {
   min-height: 112px;
 }
 
+.sales-training-hero > div:first-child {
+  min-width: 0;
+}
+
 .sales-training-hero.compact {
   min-height: 74px;
   padding-top: 14px;
@@ -4264,6 +4276,69 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
+.training-hero-actions {
+  min-width: 0;
+}
+
+.hero-active-plan {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 360px;
+  max-width: 520px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 32%, var(--line));
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--surface-strong) 66%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
+}
+
+.hero-active-plan > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hero-active-plan span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: color-mix(in srgb, var(--text) 76%, var(--cyan));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hero-active-plan strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-active-plan em {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-active-plan > div:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hero-active-plan :deep(.el-button) {
+  height: 24px;
+  padding: 0 6px;
+  color: color-mix(in srgb, var(--cyan) 76%, var(--text));
+  font-size: 12px;
+}
+
 .hero-chip {
   display: inline-flex;
   align-items: center;
@@ -4334,19 +4409,19 @@ onMounted(() => {
 
 .training-workspace {
   display: grid;
-  grid-template-columns: minmax(230px, 290px) minmax(720px, 1fr) minmax(360px, 420px);
-  gap: 14px;
+  grid-template-areas: "main";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto) auto;
+  gap: 12px;
   align-items: stretch;
   min-height: 0;
   overflow: hidden;
 }
 
 .training-workspace.plan-step-workspace {
+  grid-template-areas: "main";
   grid-template-columns: minmax(0, 1fr);
-}
-
-.training-workspace.plan-step-workspace.has-left-panel {
-  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+  grid-template-rows: auto;
 }
 
 .training-left-panel,
@@ -4361,7 +4436,20 @@ onMounted(() => {
   padding-right: 2px;
 }
 
+.training-left-panel {
+  grid-area: context;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: visible;
+  padding-right: 0;
+}
+
+.training-main-panel {
+  grid-area: main;
+  min-width: 0;
+}
+
 .training-right-panel {
+  grid-area: side;
   padding-bottom: max(16px, env(safe-area-inset-bottom));
   scrollbar-gutter: stable;
 }
@@ -4513,6 +4601,134 @@ onMounted(() => {
 .profile-summary-panel {
   display: grid;
   gap: 12px;
+}
+
+.profile-summary-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-summary-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 76px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, var(--cyan) 16%);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+}
+
+.profile-summary-bar.customer {
+  border-color: color-mix(in srgb, var(--line) 74%, var(--green) 18%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--green) 7%, transparent), transparent 44%),
+    color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.profile-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 34%, var(--line));
+  border-radius: 8px;
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+.profile-summary-bar.customer .profile-summary-icon {
+  border-color: color-mix(in srgb, var(--green) 34%, var(--line));
+  color: var(--green);
+}
+
+.profile-summary-content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.profile-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-summary-head strong {
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.profile-summary-head em {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 48px;
+  overflow: hidden;
+}
+
+.profile-summary-tags span {
+  display: inline-flex;
+  align-items: center;
+  max-width: 128px;
+  min-height: 22px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--cyan) 28%, var(--line));
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: color-mix(in srgb, var(--text) 82%, var(--cyan));
+  background: color-mix(in srgb, var(--surface-strong) 66%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-summary-tags.customer span {
+  border-color: color-mix(in srgb, var(--green) 28%, var(--line));
+  color: color-mix(in srgb, var(--text) 82%, var(--green));
+}
+
+.profile-summary-meta.compact {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.profile-summary-meta.compact span {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-summary-bar .tech-button {
+  min-width: 52px;
+  height: 30px;
+  padding: 0 12px;
 }
 
 .profile-chip-cloud {
@@ -6448,7 +6664,7 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1320px) {
   .training-console-layout {
     grid-template-columns: 1fr;
     overflow: auto;
@@ -6499,6 +6715,7 @@ onMounted(() => {
   .training-console-layout,
   .training-workspace,
   .role-goal-grid,
+  .profile-summary-strip,
   .setup-flow-tabs,
   .training-right-panel {
     grid-template-columns: 1fr;
@@ -6544,6 +6761,7 @@ onMounted(() => {
   .training-workspace-rail,
   .training-workspace-nav,
   .training-workspace.plan-step-workspace,
+  .profile-summary-bar,
   .training-form-grid.two,
   .training-form-grid.four,
   .training-left-panel .training-form-grid.two,
@@ -6570,6 +6788,18 @@ onMounted(() => {
   .training-workspace-nav button b,
   .training-workspace-nav button small {
     grid-column: 2;
+  }
+
+  .profile-summary-bar {
+    align-items: flex-start;
+  }
+
+  .profile-summary-bar .tech-button {
+    width: 100%;
+  }
+
+  .profile-summary-meta.compact {
+    flex-wrap: wrap;
   }
 
   .role-profile-hero div {

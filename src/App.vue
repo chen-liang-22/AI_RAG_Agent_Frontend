@@ -35,8 +35,8 @@ const portalMenus = ref<PortalMenuItem[]>([])
 const allowedPages = computed(() => collectAllowedPagesFromPortalMenus(portalMenus.value))
 const hasActivePageAccess = computed(() => allowedPages.value.has(activePage.value))
 const loginForm = reactive({
-  username: 'admin',
-  password: '1234qwer',
+  username: '',
+  password: '',
 })
 const loginSubmitDisabled = computed(() => (
   authLoading.value || !loginForm.username.trim() || !loginForm.password.trim()

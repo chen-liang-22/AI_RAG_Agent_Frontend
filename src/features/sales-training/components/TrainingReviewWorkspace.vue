@@ -101,11 +101,18 @@ function historyScoreText(item: TrainingSessionSummaryResponse): string {
   display: grid;
   grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .training-panel {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
   min-width: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--line) 78%, var(--cyan) 18%);
@@ -115,6 +122,17 @@ function historyScoreText(item: TrainingSessionSummaryResponse): string {
     linear-gradient(135deg, color-mix(in srgb, var(--primary) 7%, transparent), transparent 42%),
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), color-mix(in srgb, var(--surface-2) 88%, transparent));
   box-shadow: var(--shadow-sm);
+}
+
+.history-panel {
+  min-height: 0;
+}
+
+.score-panel {
+  align-content: start;
+  overflow-y: auto;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  scrollbar-gutter: stable;
 }
 
 .training-panel::before {
@@ -135,9 +153,10 @@ function historyScoreText(item: TrainingSessionSummaryResponse): string {
 }
 
 .training-history-list {
-  min-height: 112px;
-  max-height: 260px;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .training-history-list button,

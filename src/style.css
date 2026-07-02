@@ -797,6 +797,32 @@ button, input, textarea { font: inherit; }
   min-height: 260px;
 }
 
+.system-menu-permission .el-tree {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+}
+
+.system-menu-permission .el-tree-node__content {
+  min-height: 32px;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.system-menu-permission .el-tree-node__content:hover {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.system-menu-permission .el-tree-node.is-current > .el-tree-node__content {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.system-menu-permission .el-tree-node__label {
+  color: var(--text);
+}
+
 .system-permission-header {
   display: flex;
   align-items: center;
@@ -1299,6 +1325,17 @@ button, input, textarea { font: inherit; }
   min-width: 0;
 }
 
+.exam-control-actions {
+  display: grid;
+  margin-top: 8px;
+}
+
+.exam-start-button.el-button {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 12px;
+}
+
 .exam-endpoint {
   display: grid;
   gap: 6px;
@@ -1740,7 +1777,6 @@ button, input, textarea { font: inherit; }
 
 .brand,
 .status-block,
-.workspace-card,
 .message .bubble,
 .composer,
 .composer-input,
@@ -1859,47 +1895,6 @@ button, input, textarea { font: inherit; }
   border-radius: 12px;
   color: var(--cyan);
   background: color-mix(in srgb, var(--surface) 80%, transparent);
-}
-
-.workspace-actions,
-.knowledge-toolbar.compact {
-  display: grid;
-  gap: 10px;
-}
-
-.workspace-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 14px;
-  border-radius: 14px;
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-}
-
-.workspace-card strong,
-.workspace-card em {
-  display: block;
-}
-
-.workspace-card em {
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-style: normal;
-  font-size: 12px;
-}
-
-.workspace-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--primary), var(--cyan));
 }
 
 .chat-panel {
@@ -2096,7 +2091,7 @@ button, input, textarea { font: inherit; }
 .tech-button, .portal-theme-button {
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
-.tech-button:hover, .portal-theme-button:hover, .workspace-card:hover, .portal-nav-item:hover {
+.tech-button:hover, .portal-theme-button:hover, .portal-nav-item:hover {
   transform: translateY(-1px);
 }
 

@@ -424,7 +424,6 @@ onMounted(async () => {
       </div>
       <div class="exam-hero-actions">
         <el-button class="tech-button" :icon="RefreshCw" :loading="loadingFiles" @click="refreshKnowledgeFiles">刷新题源</el-button>
-        <el-button class="tech-button primary" :icon="Sparkles" :loading="starting" @click="startExam">开始测评</el-button>
       </div>
     </header>
 
@@ -480,6 +479,12 @@ onMounted(async () => {
             </el-checkbox-button>
           </el-checkbox-group>
         </label>
+
+        <div class="exam-control-actions">
+          <el-button class="tech-button primary exam-start-button" :icon="Sparkles" :loading="starting" @click="startExam">
+            开始测评
+          </el-button>
+        </div>
       </aside>
 
       <section class="exam-chat-panel">
