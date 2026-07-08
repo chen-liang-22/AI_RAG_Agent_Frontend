@@ -23,6 +23,8 @@ const props = defineProps<{
   selectedFile: File | null
   uploadResult: TrainingKnowledgeUploadResponse | null
   uploading: boolean
+  uploadAccept: string
+  uploadDisplayText: string
   uploadHelpDescription: string
   currentUploadChunkCount: number
   currentUploadPointCount: number
@@ -86,7 +88,7 @@ const uploadResultTitle = computed(() => {
 const uploadResultSubtitle = computed(() => {
   // 副标题只保留文件名和批次关键信息，避免左侧面板出现长段调试信息。
   const result = props.uploadResult
-  if (!result) return props.selectedFile?.name || '支持 DOCX、PDF、TXT 格式'
+  if (!result) return props.selectedFile?.name || `支持 ${props.uploadDisplayText} 格式`
   const fileName = result.source_file || props.selectedFile?.name || '训练资料'
   return `${fileName} · 批次 ${result.batch_id}`
 })
@@ -139,11 +141,11 @@ function onFileInputChange(event: Event) {
 
     <div class="upload-command-card">
       <label class="training-upload-zone">
-        <input type="file" accept=".docx,.pdf,.txt" @change="onFileInputChange" />
+        <input type="file" :accept="uploadAccept" @change="onFileInputChange" />
         <span class="upload-zone-icon"><UploadCloud :size="24" /></span>
         <span class="upload-zone-text">
           <strong>{{ selectedFile?.name || '选择训练资料文件' }}</strong>
-          <small>DOCX / PDF / TXT，上传后先生成待发布切片</small>
+          <small>{{ uploadDisplayText }}，上传后先生成待发布切片</small>
         </span>
       </label>
       <el-button

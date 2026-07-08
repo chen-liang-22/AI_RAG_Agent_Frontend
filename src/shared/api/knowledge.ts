@@ -1,5 +1,5 @@
 import { fetchWithAuth, readErrorMessage, request } from './http'
-import type { KnowledgeBulkReindexResponse, KnowledgeDeleteResponse, KnowledgeFilePreviewResponse, KnowledgeFileResponse, KnowledgeUploadPreviewResponse, KnowledgeUploadRecommendResponse, KnowledgeUploadResponse } from './types'
+import type { KnowledgeBulkReindexResponse, KnowledgeDeleteResponse, KnowledgeFilePreviewResponse, KnowledgeFileResponse, KnowledgeUploadOptionsResponse, KnowledgeUploadPreviewResponse, KnowledgeUploadRecommendResponse, KnowledgeUploadResponse } from './types'
 
 export function reloadKnowledge() { // 触发后端重新加载知识库到 Qdrant
   return request<{ status: string; collection_name: string }>('/knowledge/reload', { // 返回简单状态对象
@@ -12,6 +12,10 @@ export function listKnowledgeFiles(includeTraining = false) { // 获取知识库
   if (includeTraining) params.set('include_training', 'true')
   const query = params.toString()
   return request<KnowledgeFileResponse[]>(`/knowledge/files${query ? `?${query}` : ''}`) // GET /knowledge/files
+}
+
+export function fetchKnowledgeUploadOptions() { // 获取后端当前支持的上传文件类型
+  return request<KnowledgeUploadOptionsResponse>('/knowledge/upload/options') // GET /knowledge/upload/options
 }
 
 export function previewKnowledgeDocument(documentId: string, maxChars = 30000) { // 预览已入库知识库文件

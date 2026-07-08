@@ -33,8 +33,8 @@ function assertRuleIncludes(source, selector, expected, message) {
 
 assertIncludes(
   homeSource,
-  'const trainingKnowledgeDialogBatchPageSize = 5',
-  '知识库管理弹窗内训练资料分页数量应使用独立常量 5，给每条资料留出更宽松空间',
+  'const trainingKnowledgeDialogBatchPageSize = 6',
+  '知识库管理弹窗内训练资料分页数量应使用独立常量 6，符合一页展示 6 条资料的交互要求',
 )
 assertIncludes(
   homeSource,
@@ -54,14 +54,14 @@ assertIncludes(
 assertRuleIncludes(
   homeSource,
   '.training-knowledge-dialog-body',
-  'grid-template-columns: minmax(260px, 300px) minmax(0, 1fr)',
-  '知识库管理弹窗左侧上传栏需要缩窄，给已上传资料让出空间',
+  'grid-template-columns: minmax(270px, 315px) minmax(0, 1fr)',
+  '知识库管理弹窗左侧上传栏需要保持紧凑宽度，给已上传资料让出空间',
 )
 assertRuleIncludes(
   homeSource,
   '.training-knowledge-dialog-body',
-  'height: min(72vh, 640px)',
-  '知识库管理弹窗内容区需要更高，避免已上传资料区域拥挤',
+  'height: 100%',
+  '知识库管理弹窗内容区需要占满弹窗主体，避免已上传资料区域拥挤',
 )
 
 assertIncludes(
@@ -99,13 +99,13 @@ assertRuleIncludes(
 assertRuleIncludes(
   workspaceSource,
   '.training-knowledge-workspace.compact-list .batch-action-row',
-  'width: 210px',
+  'width: 220px',
   '紧凑模式下操作按钮区需要固定宽度，避免挤压文件名和质量信息',
 )
 assertRuleIncludes(
   workspaceSource,
   '.training-knowledge-workspace.compact-list .training-batch-item',
-  'min-height: 96px',
+  'min-height: 150px',
   '紧凑模式下资料条目仍需要保留宽松行高，避免信息贴得太紧',
 )
 

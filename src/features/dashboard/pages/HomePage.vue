@@ -12,6 +12,7 @@ import {
   FileText,
   GraduationCap,
   MessageSquareText,
+  Network,
   Pencil,
   RefreshCw,
   Search,
@@ -29,6 +30,7 @@ import {
   deleteDictionaryItem,
   deleteExamSession,
   deleteKnowledgeFile,
+  fetchKnowledgeUploadOptions,
   fetchHealth,
   getConversationDetail,
   getExamSessionDetail,
@@ -52,6 +54,7 @@ import {
   type HealthResponse,
   type KnowledgeFilePreviewResponse,
   type KnowledgeFileResponse,
+  type KnowledgeUploadOptionsResponse,
   type KnowledgeUploadPreviewResponse,
   type KnowledgeUploadRecommendResponse,
 } from '../../../shared/api'
@@ -88,11 +91,13 @@ import { buildTrainingBatchFromUploadResult, retryTrainingIngestTaskForBatch } f
 import TrainingKnowledgeWorkspace from '../../sales-training/components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../../sales-training/components/TrainingKnowledgeUploadPanel.vue'
 import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue'
+import { DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS, normalizeKnowledgeUploadOptions } from '../../../shared/knowledgeUploadOptions'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
 const emit = defineEmits<{
   openChatHistory: [conversationId: string]
   openSalesTraining: []
+  openKnowledgeGraph: []
 }>()
 
 interface DictionaryFormState { // 字典项编辑表单，字段和后端字典项保存接口一一对应
@@ -160,12 +165,13 @@ const selectedExamDetail = ref<ExamSessionDetailResponse | null>(null) // 当前
 const knowledgeDialogVisible = ref(false) // 知识库管理弹窗开关
 const knowledgeDialogTab = ref<KnowledgeDialogTab>('general') // 首页知识库弹窗当前页签：通用知识库或销售训练资料
 const knowledgeLoading = ref(false) // 知识库文件列表加载状态
+const knowledgeUploadOptions = ref<KnowledgeUploadOptionsResponse>(DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS) // 后端返回的上传格式能力，供两个上传入口共用
 const knowledgeKeyword = ref('') // 知识库文件名搜索关键词
 const knowledgeFileInput = ref<HTMLInputElement | null>(null) // 隐藏文件选择框
 const activeKnowledgeCollection = ref('') // 当前知识库 collection 页签
 const knowledgePage = ref(1) // 知识库文件分页页码
 const knowledgePageSize = 9 // 知识库文件每页 9 个，页面上保持三列三行
-const trainingKnowledgeDialogBatchPageSize = 5 // 销售训练资料弹窗使用宽松列表，一页展示 5 条
+const trainingKnowledgeDialogBatchPageSize = 6 // 销售训练资料弹窗每页展示 6 条，超出可视区域时由右侧列表内部滚动查看
 const activeKnowledgeAction = ref('') // 当前知识库文件操作 loading key
 const reindexingAll = ref(false) // 批量重建索引状态
 const uploadingKnowledge = ref(false) // 上传预览状态
@@ -263,6 +269,8 @@ const trainingKnowledgeUploadQualitySplitText = computed(() => trainingKnowledge
 const trainingKnowledgeUploadPublishValidation = computed(() => (
   trainingKnowledgeUploadQualityReport.value.publish_validation || null
 ) as Record<string, unknown> | null)
+const knowledgeUploadAccept = computed(() => knowledgeUploadOptions.value.accept || DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS.accept)
+const knowledgeUploadDisplayText = computed(() => knowledgeUploadOptions.value.display_text || DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS.display_text)
 const trainingKnowledgeChunkTypeSummaries = computed<ChunkTypeSummary[]>(() => {
   const summaryMap = new Map<string, ChunkTypeSummary>()
   for (const chunk of trainingKnowledgeChunks.value) {
@@ -738,6 +746,7 @@ async function refreshDashboard() { // 刷新首页所有总览数据
     trainingBatchResult,
     trainingPlanResult,
     trainingSessionResult,
+    uploadOptionsResult,
   ] = await Promise.allSettled([
     fetchHealth(),
     listKnowledgeFiles(),
@@ -747,6 +756,7 @@ async function refreshDashboard() { // 刷新首页所有总览数据
     listTrainingKnowledgeBatches(1, 30),
     listTrainingPlans(1, 8),
     listTrainingSessions(1, 30),
+    fetchKnowledgeUploadOptions(),
   ])
 
   try {
@@ -782,6 +792,9 @@ async function refreshDashboard() { // 刷新首页所有总览数据
       trainingSessions.value = trainingSessionResult.value.items
       trainingSessionTotal.value = trainingSessionResult.value.total
     }
+    if (uploadOptionsResult.status === 'fulfilled') {
+      knowledgeUploadOptions.value = normalizeKnowledgeUploadOptions(uploadOptionsResult.value)
+    }
 
     const failedCount = [
       healthResult,
@@ -792,6 +805,7 @@ async function refreshDashboard() { // 刷新首页所有总览数据
       trainingBatchResult,
       trainingPlanResult,
       trainingSessionResult,
+      uploadOptionsResult,
     ]
       .filter((result) => result.status === 'rejected')
       .length
@@ -815,6 +829,15 @@ async function refreshKnowledgeFiles() { // 刷新知识库文件列表
     ElMessage.error(error instanceof Error ? error.message : '知识库文件列表加载失败')
   } finally {
     knowledgeLoading.value = false
+  }
+}
+
+async function refreshKnowledgeUploadOptions() { // 刷新后端上传能力，避免前端上传格式写死
+  try {
+    knowledgeUploadOptions.value = normalizeKnowledgeUploadOptions(await fetchKnowledgeUploadOptions())
+  } catch (error) {
+    knowledgeUploadOptions.value = DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS
+    ElMessage.warning(error instanceof Error ? `上传格式配置读取失败，已使用本地兜底：${error.message}` : '上传格式配置读取失败，已使用本地兜底')
   }
 }
 
@@ -848,7 +871,7 @@ async function refreshHealth() { // 刷新后端健康检查
 async function openKnowledgeDialog() { // 打开首页知识库弹窗，同时刷新通用知识库和销售训练资料概览
   knowledgeDialogVisible.value = true
   knowledgeDialogTab.value = 'general'
-  await Promise.all([refreshKnowledgeFiles(), refreshTrainingKnowledgeBatches()])
+  await Promise.all([refreshKnowledgeFiles(), refreshTrainingKnowledgeBatches(), refreshKnowledgeUploadOptions()])
 }
 
 function openKnowledgeFilePicker() { // 触发隐藏文件输入框，保持上传按钮样式统一
@@ -863,7 +886,11 @@ async function openDictionaryDialog() { // 打开字典表弹窗，并刷新最�
 async function openTrainingKnowledgeDialog() { // 从首页销售驾驶舱直接打开“销售训练资料”管理页签
   knowledgeDialogVisible.value = true
   knowledgeDialogTab.value = 'salesTraining'
-  await Promise.all([refreshKnowledgeFiles(), refreshTrainingKnowledgeBatches()])
+  await Promise.all([refreshKnowledgeFiles(), refreshTrainingKnowledgeBatches(), refreshKnowledgeUploadOptions()])
+}
+
+function openKnowledgeGraph() { // 从首页进入知识图谱驾驶舱，查看 Neo4j 节点和关系写入情况
+  emit('openKnowledgeGraph')
 }
 
 async function handleKnowledgeFileChange(event: Event) { // 选择文件后先上传到临时区做预解析
@@ -1544,7 +1571,7 @@ onMounted(() => {
       ref="knowledgeFileInput"
       class="hidden-file-input"
       type="file"
-      accept=".txt,.pdf"
+      :accept="knowledgeUploadAccept"
       @change="handleKnowledgeFileChange"
     >
 
@@ -1556,6 +1583,7 @@ onMounted(() => {
       </div>
       <div class="dashboard-hero-actions">
         <el-button class="tech-button primary" :icon="DatabaseZap" @click="openKnowledgeDialog">知识库管理</el-button>
+        <el-button class="tech-button" :icon="Network" @click="openKnowledgeGraph">知识图谱</el-button>
         <el-button class="tech-button" :icon="FileText" @click="openDictionaryDialog">字典表管理</el-button>
         <el-button class="tech-button" :icon="Clock3" @click="openRecentConversationDialog">最近会话</el-button>
         <el-button class="tech-button" :icon="GraduationCap" @click="openExamRecordDialog">考试记录</el-button>
@@ -1947,6 +1975,8 @@ onMounted(() => {
           :selected-file="trainingKnowledgeSelectedFile"
           :upload-result="trainingKnowledgeUploadResult"
           :uploading="trainingKnowledgeUploading"
+          :upload-accept="knowledgeUploadAccept"
+          :upload-display-text="knowledgeUploadDisplayText"
           :upload-help-description="trainingKnowledgeUploadHelpDescription"
           :current-upload-chunk-count="trainingKnowledgeCurrentUploadChunkCount"
           :current-upload-point-count="trainingKnowledgeCurrentUploadPointCount"
@@ -2333,6 +2363,30 @@ onMounted(() => {
     color-mix(in srgb, var(--panel-bg, rgba(15, 23, 42, 0.72)) 88%, transparent);
 }
 
+:deep(.knowledge-dialog.el-dialog),
+:deep(.knowledge-dialog .el-dialog) {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 24px);
+  max-height: calc(100dvh - 24px);
+  margin-top: 12px !important;
+  margin-bottom: 12px;
+}
+
+:deep(.knowledge-dialog.el-dialog .el-dialog__body),
+:deep(.knowledge-dialog .el-dialog__body) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+:deep(.knowledge-dialog.el-dialog .el-dialog__footer),
+:deep(.knowledge-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
 .knowledge-mode-tab {
   position: relative;
   display: grid;
@@ -2397,18 +2451,20 @@ onMounted(() => {
 }
 
 .knowledge-mode-panel {
+  height: 100%;
   min-width: 0;
   min-height: 0;
 }
 
 .training-knowledge-dialog-body {
   display: grid;
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  height: min(72vh, 640px);
+  grid-template-columns: minmax(270px, 315px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 
 .training-knowledge-dialog-body > * {

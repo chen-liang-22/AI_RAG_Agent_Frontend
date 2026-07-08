@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   LayoutDashboard,
   Menu,
+  Network,
   Settings,
   ShieldCheck,
   Users,
@@ -12,7 +13,7 @@ import type { Component } from 'vue'
 import type { SystemMenuResponse } from '../shared/api'
 
 export type ThemeMode = 'dark' | 'light'
-export type MainPage = 'home' | 'chat' | 'exam' | 'salesTraining' | 'userManagement' | 'roleManagement' | 'menuManagement'
+export type MainPage = 'home' | 'chat' | 'exam' | 'salesTraining' | 'knowledgeGraph' | 'userManagement' | 'roleManagement' | 'menuManagement'
 
 export interface PortalMenuItem { // 左侧菜单渲染项，只来源于后端菜单接口
   key: string
@@ -29,6 +30,7 @@ const iconMap: Record<string, Component> = {
   ClipboardCheck,
   LayoutDashboard,
   Menu,
+  Network,
   Settings,
   ShieldCheck,
   Users,
@@ -36,7 +38,7 @@ const iconMap: Record<string, Component> = {
 
 export function isMainPage(value: string | null | undefined): value is MainPage {
   // 后端 page_key 只有命中本地页面映射时才允许切换，避免进入空白页。
-  return ['home', 'chat', 'exam', 'salesTraining', 'userManagement', 'roleManagement', 'menuManagement'].includes(String(value || ''))
+  return ['home', 'chat', 'exam', 'salesTraining', 'knowledgeGraph', 'userManagement', 'roleManagement', 'menuManagement'].includes(String(value || ''))
 }
 
 export function buildPortalMenus(menus: SystemMenuResponse[]): PortalMenuItem[] {

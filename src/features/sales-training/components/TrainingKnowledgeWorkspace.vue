@@ -664,6 +664,20 @@ function clearBatchNameSearch() {
   min-height: 24px;
 }
 
+.batch-pagination :deep(.el-pager li),
+.batch-pagination :deep(.btn-prev),
+.batch-pagination :deep(.btn-next) {
+  border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line));
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+}
+
+.batch-pagination :deep(.el-pager li.is-active) {
+  border-color: color-mix(in srgb, var(--cyan) 68%, var(--primary));
+  color: #fff;
+  background: linear-gradient(135deg, var(--cyan), var(--primary));
+}
+
 .training-batch-item {
   position: relative;
   display: grid;
@@ -900,21 +914,24 @@ function clearBatchNameSearch() {
 
 .training-knowledge-workspace.compact-list .training-batch-list {
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
   padding: 0 6px 8px 0;
 }
 
 .training-knowledge-workspace.compact-list .training-batch-item {
   grid-template-areas:
-    "main meta actions"
-    "tags tags actions"
-    "task task actions";
-  grid-template-columns: minmax(0, 1.2fr) minmax(230px, 0.8fr) 210px;
-  align-items: center;
-  gap: 8px 12px;
-  min-height: 96px;
+    "main actions"
+    "meta actions"
+    "tags actions"
+    "task actions";
+  grid-template-columns: minmax(0, 1fr) 220px;
+  align-items: start;
+  gap: 9px 14px;
+  min-height: 150px;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 
 .training-knowledge-workspace.compact-list .training-batch-item.active::before {
@@ -934,13 +951,13 @@ function clearBatchNameSearch() {
 
 .training-knowledge-workspace.compact-list .batch-meta-grid {
   grid-area: meta;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
 }
 
 .training-knowledge-workspace.compact-list .batch-score-meta,
 .training-knowledge-workspace.compact-list .batch-item-meta {
-  min-height: 34px;
+  min-height: 36px;
   gap: 8px;
   padding: 6px 9px;
 }
@@ -977,14 +994,17 @@ function clearBatchNameSearch() {
 
 .training-knowledge-workspace.compact-list .batch-action-row {
   grid-area: actions;
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-self: stretch;
-  width: 210px;
+  align-content: start;
+  width: 220px;
   gap: 8px;
+  padding: 2px 0;
 }
 
 .training-knowledge-workspace.compact-list .batch-icon-button.el-button {
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 8px;
   font-size: 12px;
 }
@@ -1503,6 +1523,10 @@ function clearBatchNameSearch() {
 
   .training-knowledge-workspace.compact-list .batch-action-row {
     width: 100%;
+  }
+
+  .training-knowledge-workspace.compact-list .batch-icon-button.el-button {
+    min-width: 0;
   }
 
   .training-batch-list {

@@ -16,6 +16,13 @@ export interface KnowledgeFileResponse { // `/knowledge/files` 返回的单个�
   error_message?: string | null // 入库失败时的错误信息
 }
 
+export interface KnowledgeUploadOptionsResponse { // `/knowledge/upload/options` 返回的上传能力配置
+  allowed_file_types: string[] // 后端当前允许上传的扩展名，不带点，例如 txt/pdf/docx
+  accept: string // 浏览器文件选择框 accept 字符串，例如 .txt,.pdf,.docx
+  display_text: string // 面向用户展示的格式说明，例如 TXT / PDF / DOCX
+  max_file_size_bytes?: number | null // 单个文件大小上限，单位字节
+}
+
 export interface KnowledgeUploadResponse { // `/knowledge/upload/confirm` 确认入库后的响应结构
   status: string // 知识库操作结果编码，具体值来自 knowledge_result_status 字典
   message: string // 后端返回的简短说明

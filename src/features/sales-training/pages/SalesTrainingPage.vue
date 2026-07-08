@@ -55,9 +55,11 @@ import {
   updateTrainingPlan,
 } from '../api'
 import {
+  fetchKnowledgeUploadOptions,
   listTrainingProfileDictionaries,
   type DictionaryGroupResponse,
   type DictionaryItemResponse,
+  type KnowledgeUploadOptionsResponse,
 } from '../../../shared/api'
 import type {
   TrainingGoalSettingResponse,
@@ -102,6 +104,7 @@ import { trainingKnowledgeSplitterLabel } from '../composables/trainingKnowledge
 import TrainingKnowledgeWorkspace from '../components/TrainingKnowledgeWorkspace.vue'
 import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadPanel.vue'
 import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
+import { DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS, normalizeKnowledgeUploadOptions } from '../../../shared/knowledgeUploadOptions'
 
 const props = defineProps<{ themeMode: 'dark' | 'light' }>()
 
@@ -225,6 +228,7 @@ interface PlanEditDraft {
 const selectedFile = ref<File | null>(null)
 const sourceType = ref('lms_case')
 const profileType = ref(DEFAULT_CUSTOMER_PROFILE_TYPE)
+const knowledgeUploadOptions = ref<KnowledgeUploadOptionsResponse>(DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS)
 const uploadResult = ref<TrainingKnowledgeUploadResponse | null>(null)
 const chunks = ref<TrainingKnowledgeChunkResponse[]>([])
 const trainingBatches = ref<TrainingKnowledgeBatchResponse[]>([])
@@ -330,6 +334,8 @@ const uploadQualitySplitText = computed(() => trainingKnowledgeSplitterLabel(upl
 const uploadPublishValidation = computed(() => (
   uploadQualityReport.value.publish_validation || null
 ) as Record<string, unknown> | null)
+const knowledgeUploadAccept = computed(() => knowledgeUploadOptions.value.accept || DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS.accept)
+const knowledgeUploadDisplayText = computed(() => knowledgeUploadOptions.value.display_text || DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS.display_text)
 const canOpenRoleSetup = computed(() => Boolean(activePlan.value))
 const canOpenStageSetup = computed(() => Boolean(roleResult.value))
 const canOpenScoreSetup = computed(() => Boolean(goalSetting.value))
@@ -1738,6 +1744,15 @@ function clearUploadArea() {
   uploadResult.value = null
 }
 
+async function refreshKnowledgeUploadOptions() {
+  try {
+    knowledgeUploadOptions.value = normalizeKnowledgeUploadOptions(await fetchKnowledgeUploadOptions())
+  } catch (error) {
+    knowledgeUploadOptions.value = DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS
+    ElMessage.warning(error instanceof Error ? `上传格式配置读取失败，已使用本地兜底：${error.message}` : '上传格式配置读取失败，已使用本地兜底')
+  }
+}
+
 function buildRoleGeneratePayload(extraDetailText = extraDetails.value) {
   return {
     plan_id: activePlan.value?.plan_id || null,
@@ -2590,6 +2605,7 @@ onMounted(() => {
   void refreshTrainingBatches()
   void refreshCustomerProfileTemplates()
   void refreshTrainingPlans()
+  void refreshKnowledgeUploadOptions()
 })
 </script>
 
@@ -2638,6 +2654,8 @@ onMounted(() => {
           :selected-file="selectedFile"
           :upload-result="uploadResult"
           :uploading="uploading"
+          :upload-accept="knowledgeUploadAccept"
+          :upload-display-text="knowledgeUploadDisplayText"
           :upload-help-description="uploadHelpDescription"
           :current-upload-chunk-count="currentUploadChunkCount"
           :current-upload-point-count="currentUploadPointCount"

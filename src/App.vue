@@ -19,6 +19,7 @@ import {
 const HomePage = defineAsyncComponent(() => import('./features/dashboard/pages/HomePage.vue'))
 const ChatPage = defineAsyncComponent(() => import('./features/chat/pages/ChatPage.vue'))
 const SalesTrainingPage = defineAsyncComponent(() => import('./features/sales-training/pages/SalesTrainingPage.vue'))
+const KnowledgeGraphPage = defineAsyncComponent(() => import('./features/knowledge-graph/pages/KnowledgeGraphPage.vue'))
 const ExamPage = defineAsyncComponent(() => import('./features/exam/pages/ExamPage.vue'))
 const UserManagementPage = defineAsyncComponent(() => import('./features/system/pages/UserManagementPage.vue'))
 const RoleManagementPage = defineAsyncComponent(() => import('./features/system/pages/RoleManagementPage.vue'))
@@ -55,6 +56,10 @@ function openChatHistory(conversationId: string) {
 
 function openSalesTraining() {
   activePage.value = 'salesTraining'
+}
+
+function openKnowledgeGraph() {
+  activePage.value = 'knowledgeGraph'
 }
 
 async function restoreLogin() {
@@ -186,6 +191,7 @@ onBeforeUnmount(() => {
       :theme-mode="themeMode"
       @open-chat-history="openChatHistory"
       @open-sales-training="openSalesTraining"
+      @open-knowledge-graph="openKnowledgeGraph"
     />
     <ChatPage
       v-else-if="activePage === 'chat'"
@@ -194,6 +200,7 @@ onBeforeUnmount(() => {
       :current-user="currentUser"
     />
     <SalesTrainingPage v-else-if="activePage === 'salesTraining'" :theme-mode="themeMode" />
+    <KnowledgeGraphPage v-else-if="activePage === 'knowledgeGraph'" :theme-mode="themeMode" />
     <ExamPage v-else-if="activePage === 'exam'" :theme-mode="themeMode" />
     <UserManagementPage v-else-if="activePage === 'userManagement'" :current-user="currentUser" />
     <RoleManagementPage v-else-if="activePage === 'roleManagement'" />
