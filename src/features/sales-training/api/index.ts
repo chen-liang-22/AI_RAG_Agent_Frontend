@@ -1,5 +1,5 @@
 import { buildRequestHeaders, fetchWithAuth, readErrorMessage, request } from '../../../shared/api/http'
-import type { IngestTaskResponse, TrainingGoalSettingResponse, TrainingKnowledgeBatchListResponse, TrainingKnowledgeChunkListResponse, TrainingKnowledgeDeleteResponse, TrainingKnowledgePreviewResponse, TrainingKnowledgePublishResponse, TrainingKnowledgeReparseResponse, TrainingKnowledgeRollbackResponse, TrainingKnowledgeUploadPayload, TrainingKnowledgeUploadResponse, TrainingKnowledgeVersionListResponse, TrainingPlanCreatePayload, TrainingPlanDeleteResponse, TrainingPlanDetailResponse, TrainingPlanListResponse, TrainingPlanUpdatePayload, TrainingRoleGeneratePayload, TrainingRoleGenerateResponse, TrainingScenarioPolishPayload, TrainingScenarioPolishResponse, TrainingScoreResponse, TrainingSessionDetailResponse, TrainingSessionListResponse, TrainingSessionResponse, TrainingSessionStartPayload, TrainingStreamHandlers, TrainingSupplementQuestionGenerateResponse, TrainingTurnPayload, TrainingTurnResponse } from '../types'
+import type { IngestTaskResponse, TrainingGoalSettingResponse, TrainingKnowledgeBatchListResponse, TrainingKnowledgeChunkListResponse, TrainingKnowledgeDeleteResponse, TrainingKnowledgePreviewResponse, TrainingKnowledgePublishResponse, TrainingKnowledgeReparseResponse, TrainingKnowledgeRollbackResponse, TrainingKnowledgeUploadPayload, TrainingKnowledgeUploadResponse, TrainingKnowledgeVersionListResponse, TrainingPlanCreatePayload, TrainingPlanDeleteResponse, TrainingPlanDetailResponse, TrainingPlanListResponse, TrainingPlanUpdatePayload, TrainingRoleGeneratePayload, TrainingRoleGenerateResponse, TrainingScenarioPolishPayload, TrainingScenarioPolishResponse, TrainingScoreResponse, TrainingSessionDeleteResponse, TrainingSessionDetailResponse, TrainingSessionListResponse, TrainingSessionResponse, TrainingSessionStartPayload, TrainingStreamHandlers, TrainingSupplementQuestionGenerateResponse, TrainingTurnPayload, TrainingTurnResponse } from '../types'
 
 export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPayload) { // 上传销售训练知识并写入临时向量库预览
   // 文件上传必须使用 FormData，让浏览器自动生成 multipart boundary。
@@ -174,6 +174,12 @@ export function listTrainingSessions(page = 1, pageSize = 8, traineeId?: string)
 
 export function getTrainingSessionDetail(sessionId: string) { // 查询销售陪练复盘详情
   return request<TrainingSessionDetailResponse>(`/training/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function deleteTrainingSession(sessionId: string) { // 删除销售陪练历史记录
+  return request<TrainingSessionDeleteResponse>(`/training/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  })
 }
 
 export function submitTrainingTurn(sessionId: string, payload: TrainingTurnPayload) { // 一次性提交学员回复并等待 AI 客户完整回复

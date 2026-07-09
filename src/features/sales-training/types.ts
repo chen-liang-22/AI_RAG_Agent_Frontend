@@ -362,6 +362,11 @@ export interface TrainingSessionListResponse { // 训练历史分页
   page_size: number
 }
 
+export interface TrainingSessionDeleteResponse { // 销售训练历史删除结果
+  status: string
+  session_id: string
+}
+
 export interface TrainingTurnRecordResponse { // 训练复盘轮次
   turn_id: string
   session_id: string

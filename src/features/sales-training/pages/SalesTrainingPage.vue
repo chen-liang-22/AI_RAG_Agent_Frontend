@@ -32,6 +32,7 @@ import {
   createTrainingPlan,
   deleteTrainingKnowledgeBatch,
   deleteTrainingPlan,
+  deleteTrainingSession,
   generateTrainingFinalScore,
   generateTrainingGoalSetting,
   generateTrainingRole,
@@ -2540,6 +2541,45 @@ async function openTrainingHistory(item: TrainingSessionSummaryResponse) {
   }
 }
 
+async function deleteTrainingHistory(item: TrainingSessionSummaryResponse) {
+  // 训练历史删除会同步清理本场训练的对话轮次和评分结果，所以必须先让用户确认一次。
+  try {
+    await ElMessageBox.confirm(
+      `确定删除 ${formatTime(item.started_at)} 的训练记录吗？删除后该场训练的对话和评分报告都会移除。`,
+      '删除训练记录',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
+  loadingHistory.value = true
+  try {
+    await deleteTrainingSession(item.session_id)
+    if (activeSession.value?.session_id === item.session_id) {
+      activeSession.value = null
+      scoreResult.value = null
+      messages.value = []
+      isReviewMode.value = false
+      stageStatus.value = 'idle'
+    }
+    const nextTotal = Math.max(0, historyTotal.value - 1)
+    if (historyPage.value > 1 && nextTotal <= (historyPage.value - 1) * 6) {
+      historyPage.value -= 1
+    }
+    await refreshTrainingHistory()
+    ElMessage.success('训练记录已删除')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '训练记录删除失败')
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
 function hydrateTrainingDetail(detail: TrainingSessionDetailResponse) {
   isReviewMode.value = true
   activeSession.value = {
@@ -3259,6 +3299,7 @@ onMounted(() => {
       :format-time="formatTime"
       @refresh-history="refreshTrainingHistory"
       @open-history="openTrainingHistory"
+      @delete-history="deleteTrainingHistory"
     />
       </main>
     </section>

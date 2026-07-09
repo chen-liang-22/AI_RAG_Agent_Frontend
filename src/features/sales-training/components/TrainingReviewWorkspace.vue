@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 训练复盘工作区：只负责历史训练与评分报告展示，数据加载和历史详情读取仍由父页面统一处理。
-import { Route, Trophy } from 'lucide-vue-next'
+import { Route, Trash2, Trophy } from 'lucide-vue-next'
 import type { TrainingScoreResponse, TrainingSessionSummaryResponse } from '../types'
 import { displayValue, reportPointList } from '../composables/trainingDisplay'
 
@@ -19,6 +19,7 @@ const historyPage = defineModel<number>('historyPage', { required: true })
 const emit = defineEmits<{
   refreshHistory: []
   openHistory: [item: TrainingSessionSummaryResponse]
+  deleteHistory: [item: TrainingSessionSummaryResponse]
 }>()
 
 function historyScoreText(item: TrainingSessionSummaryResponse): string {
@@ -40,12 +41,27 @@ function historyScoreText(item: TrainingSessionSummaryResponse): string {
         <button
           v-for="item in trainingHistories"
           :key="item.session_id"
+          class="training-history-item"
           type="button"
           @click="emit('openHistory', item)"
         >
-          <strong>{{ formatTime(item.started_at) }}</strong>
-          <span>{{ item.status }} · {{ item.answered_count }}/{{ item.round_limit }} 轮</span>
-          <em>{{ historyScoreText(item) }}</em>
+          <span class="history-main">
+            <strong>{{ formatTime(item.started_at) }}</strong>
+            <span>{{ item.status }} · {{ item.answered_count }}/{{ item.round_limit }} 轮</span>
+            <em>{{ historyScoreText(item) }}</em>
+          </span>
+          <el-tooltip content="删除训练记录" placement="top">
+            <span
+              class="history-delete"
+              role="button"
+              tabindex="0"
+              @click.stop="emit('deleteHistory', item)"
+              @keydown.enter.stop.prevent="emit('deleteHistory', item)"
+              @keydown.space.stop.prevent="emit('deleteHistory', item)"
+            >
+              <Trash2 :size="15" />
+            </span>
+          </el-tooltip>
         </button>
         <div v-if="trainingHistories.length === 0" class="training-empty compact">
           <Route :size="24" />
@@ -170,7 +186,9 @@ function historyScoreText(item: TrainingSessionSummaryResponse): string {
 
 .training-history-list button {
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 10px;
   color: var(--text);
@@ -182,6 +200,33 @@ function historyScoreText(item: TrainingSessionSummaryResponse): string {
 .training-history-list button:hover {
   border-color: color-mix(in srgb, var(--cyan) 46%, var(--line));
   box-shadow: 0 0 18px color-mix(in srgb, var(--cyan) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.history-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 30%, var(--line));
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--danger, #ef4444) 78%, var(--text));
+  background:
+    radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--danger, #ef4444) 14%, transparent), transparent 56%),
+    color-mix(in srgb, var(--surface-2) 82%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.history-delete:hover {
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 68%, var(--line));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--danger, #ef4444) 24%, transparent);
   transform: translateY(-1px);
 }
 
