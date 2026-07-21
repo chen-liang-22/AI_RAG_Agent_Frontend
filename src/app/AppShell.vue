@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import { DatabaseZap, LoaderCircle, LogOut, Moon, RefreshCw, ShieldCheck, Sparkles, Sun } from 'lucide-vue-next'
-import { fetchHealth, type AuthUser, type HealthResponse } from '../shared/api'
+import type { AuthUser, HealthResponse } from '../shared/api'
 import { type MainPage, type PortalMenuItem, type ThemeMode } from './navigation'
 import PortalNavTree from './PortalNavTree.vue'
 
@@ -11,18 +11,20 @@ const props = defineProps<{
   authLoading: boolean
   currentUser: AuthUser
   menus?: PortalMenuItem[]
+  health: HealthResponse | null
+  healthLoading: boolean
+  healthError: string
 }>()
 
 const emit = defineEmits<{
   'update:themeMode': [value: ThemeMode]
   'update:activePage': [value: MainPage]
+  navigate: [value: MainPage]
+  refreshHealth: []
   logout: []
 }>()
 
 const themeToggleIcon = computed(() => (props.themeMode === 'dark' ? Sun : Moon))
-const health = ref<HealthResponse | null>(null)
-const healthLoading = ref(false)
-const healthError = ref('')
 const navigationMenus = computed(() => props.menus || [])
 const currentUserInitial = computed(() => {
   const displayName = props.currentUser.display_name || props.currentUser.username || 'U'
@@ -44,20 +46,20 @@ const activeMenuKeys = computed(() => {
   return keys
 })
 const healthTone = computed(() => {
-  if (healthLoading.value) return 'loading'
-  if (healthError.value) return 'warn'
-  if (health.value?.status === 'ok' && health.value?.qdrant === 'ok') return 'good'
+  if (props.healthLoading) return 'loading'
+  if (props.healthError) return 'warn'
+  if (props.health?.status === 'ok' && props.health?.qdrant === 'ok') return 'good'
   return 'warn'
 })
 const healthTitle = computed(() => {
-  if (healthLoading.value) return '服务健康检查中'
-  if (healthError.value) return `服务健康未知：${healthError.value}`
-  const serviceStatus = statusLabel(health.value?.status)
-  const qdrantStatus = statusLabel(health.value?.qdrant)
-  const collectionName = health.value?.collection_name || '未知'
+  if (props.healthLoading) return '服务健康检查中'
+  if (props.healthError) return `服务健康未知：${props.healthError}`
+  const serviceStatus = statusLabel(props.health?.status)
+  const qdrantStatus = statusLabel(props.health?.qdrant)
+  const collectionName = props.health?.collection_name || '未知'
   return `服务：${serviceStatus}\nQdrant：${qdrantStatus}\nCollection：${collectionName}`
 })
-const healthIcon = computed(() => (health.value?.qdrant === 'ok' ? DatabaseZap : ShieldCheck))
+const healthIcon = computed(() => (props.health?.qdrant === 'ok' ? DatabaseZap : ShieldCheck))
 
 function toggleTheme() {
   emit('update:themeMode', props.themeMode === 'dark' ? 'light' : 'dark')
@@ -66,6 +68,7 @@ function toggleTheme() {
 function openMenu(item: PortalMenuItem) {
   if (!item.pageKey) return
   emit('update:activePage', item.pageKey)
+  emit('navigate', item.pageKey)
 }
 
 function statusLabel(status?: string) {
@@ -75,22 +78,6 @@ function statusLabel(status?: string) {
   return '未知'
 }
 
-async function refreshHealth() {
-  healthLoading.value = true
-  healthError.value = ''
-  try {
-    health.value = await fetchHealth()
-  } catch (error) {
-    health.value = null
-    healthError.value = error instanceof Error ? error.message : '健康检查失败'
-  } finally {
-    healthLoading.value = false
-  }
-}
-
-onMounted(() => {
-  void refreshHealth()
-})
 </script>
 
 <template>
@@ -99,8 +86,8 @@ onMounted(() => {
       <div class="portal-brand">
         <span class="portal-brand-mark"><Sparkles :size="18" /></span>
         <div>
-          <h1>知习台</h1>
-          <p>知识学习工作台</p>
+          <h1>知域</h1>
+          <p>Nexus · 知识工作台</p>
         </div>
       </div>
 
@@ -125,7 +112,7 @@ onMounted(() => {
             :title="healthTitle"
             aria-label="服务健康状态"
             :disabled="healthLoading"
-            @click="refreshHealth"
+            @click="emit('refreshHealth')"
           >
             <RefreshCw v-if="healthLoading" class="spin" :size="16" />
             <component :is="healthIcon" v-else :size="16" />

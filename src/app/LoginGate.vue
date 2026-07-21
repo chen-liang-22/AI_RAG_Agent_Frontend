@@ -38,8 +38,8 @@ function toggleTheme() {
       <div class="login-brand">
         <span class="login-mark"><ShieldCheck :size="26" /></span>
         <div>
-          <strong>知习台安全入口</strong>
-          <p>AI RAG Agent · 训练与知识工作台</p>
+          <strong>知域 Nexus</strong>
+          <p>训练与知识工作台</p>
         </div>
       </div>
 

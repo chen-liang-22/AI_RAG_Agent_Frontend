@@ -1,5 +1,11 @@
 import { request } from './http'
-import type { DictionaryGroupPayload, DictionaryGroupResponse, DictionaryItemPayload, DictionaryItemResponse } from './types'
+import type {
+  DictionaryGroupResponse,
+  DictionaryGroupUpdatePayload,
+  DictionaryItemCreatePayload,
+  DictionaryItemResponse,
+  DictionaryItemUpdatePayload,
+} from './types'
 
 export function listDictionaries(dictionaryCode?: string) { // 查询系统字典表，支持按字典编码过滤
   const query = dictionaryCode ? `?dictionary_code=${encodeURIComponent(dictionaryCode)}` : ''
@@ -10,28 +16,21 @@ export function listTrainingProfileDictionaries() { // 查询销售训练画像�
   return request<DictionaryGroupResponse[]>('/training/profile-dictionaries')
 }
 
-export function createDictionaryGroup(payload: DictionaryGroupPayload) { // 新增父级字典
-  return request<DictionaryGroupResponse>('/dictionaries', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export function updateDictionaryGroup(dictionaryCode: string, payload: DictionaryGroupPayload) { // 修改父级字典
+export function updateDictionaryGroup(dictionaryCode: string, payload: DictionaryGroupUpdatePayload) { // 仅修改父级字典名称
   return request<DictionaryGroupResponse>(`/dictionaries/${encodeURIComponent(dictionaryCode)}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   })
 }
 
-export function createDictionaryItem(payload: DictionaryItemPayload) { // 新增字典项
+export function createDictionaryItem(payload: DictionaryItemCreatePayload) { // 新增字典项，首项会同时建立分组
   return request<DictionaryItemResponse>('/dictionaries/items', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
 }
 
-export function updateDictionaryItem(dictionaryItemId: string, payload: DictionaryItemPayload) { // 修改字典项
+export function updateDictionaryItem(dictionaryItemId: string, payload: DictionaryItemUpdatePayload) { // 修改字典项
   return request<DictionaryItemResponse>(`/dictionaries/items/${encodeURIComponent(dictionaryItemId)}`, {
     method: 'PUT',
     body: JSON.stringify(payload),

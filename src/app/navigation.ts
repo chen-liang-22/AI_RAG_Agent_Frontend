@@ -1,5 +1,6 @@
 import {
   Bot,
+  BookKey,
   BrainCircuit,
   ClipboardCheck,
   LayoutDashboard,
@@ -24,6 +25,7 @@ export type MainPage =
   | 'roleManagement'
   | 'menuManagement'
   | 'promptManagement'
+  | 'dictionaryManagement'
 
 export interface PortalMenuItem { // 左侧菜单渲染项，只来源于后端菜单接口
   key: string
@@ -31,11 +33,13 @@ export interface PortalMenuItem { // 左侧菜单渲染项，只来源于后端�
   subLabel: string
   icon: Component
   pageKey?: MainPage
+  routePath?: string
   children: PortalMenuItem[]
 }
 
 const iconMap: Record<string, Component> = {
   Bot,
+  BookKey,
   BrainCircuit,
   ClipboardCheck,
   LayoutDashboard,
@@ -59,11 +63,48 @@ export function isMainPage(value: string | null | undefined): value is MainPage 
     'roleManagement',
     'menuManagement',
     'promptManagement',
+    'dictionaryManagement',
   ].includes(String(value || ''))
 }
 
+export function normalizeRoutePath(routePath: string | null | undefined): string | undefined {
+  // 统一后端菜单路径，去掉查询串和末尾斜杠，保证刷新与菜单点击能稳定匹配。
+  const source = String(routePath || '').trim()
+  if (!source) return undefined
+  const pathname = source.split(/[?#]/, 1)[0] || '/'
+  const prefixed = pathname.startsWith('/') ? pathname : `/${pathname}`
+  return prefixed.length > 1 ? prefixed.replace(/\/+$/, '') : '/'
+}
+
+export function findPageByRoutePath(
+  menus: PortalMenuItem[],
+  pathname: string,
+): MainPage | undefined {
+  // 只在当前授权菜单树中解析路径，未授权的静态路径不能反推出页面。
+  const normalizedPath = normalizeRoutePath(pathname)
+  for (const item of menus) {
+    if (item.pageKey && item.routePath === normalizedPath) return item.pageKey
+    const nestedPage = findPageByRoutePath(item.children, pathname)
+    if (nestedPage) return nestedPage
+  }
+  return undefined
+}
+
+export function findRoutePathByPage(
+  menus: PortalMenuItem[],
+  pageKey: MainPage,
+): string | undefined {
+  // 从授权菜单反查页面路径，避免维护独立的本地路由表。
+  for (const item of menus) {
+    if (item.pageKey === pageKey && item.routePath) return item.routePath
+    const nestedPath = findRoutePathByPage(item.children, pageKey)
+    if (nestedPath) return nestedPath
+  }
+  return undefined
+}
+
 export function prepareSystemMenusForUser(menus: SystemMenuResponse[], role?: string): SystemMenuResponse[] {
-  // 非管理员移除提示词入口；管理员缺少后端菜单时在系统管理下补充本地入口。
+  // 非管理员移除管理员专属入口；管理员缺少提示词菜单时在系统管理下补充本地入口。
   const preparedMenus = filterPromptMenuByRole(menus, role === 'admin')
   if (role !== 'admin' || containsPromptMenu(preparedMenus)) return preparedMenus
 
@@ -78,9 +119,9 @@ export function prepareSystemMenusForUser(menus: SystemMenuResponse[], role?: st
 }
 
 function filterPromptMenuByRole(menus: SystemMenuResponse[], isAdmin: boolean): SystemMenuResponse[] {
-  // 克隆菜单树，避免本地权限过滤修改后端响应对象。
+  // 克隆菜单树并过滤管理员专属页面，避免本地权限处理修改后端响应对象。
   return menus
-    .filter((menu) => isAdmin || !isPromptMenu(menu))
+    .filter((menu) => isAdmin || (!isPromptMenu(menu) && !isDictionaryMenu(menu)))
     .map((menu) => ({
       ...menu,
       metadata: isPromptMenu(menu) && menu.metadata?.sub_label === '在线版本与热更新'
@@ -93,6 +134,11 @@ function filterPromptMenuByRole(menus: SystemMenuResponse[], isAdmin: boolean): 
 function isPromptMenu(menu: SystemMenuResponse): boolean {
   // 同时识别页面键和菜单编码，兼容后端菜单命名差异。
   return menu.page_key === 'promptManagement' || menu.menu_code === 'promptManagement'
+}
+
+function isDictionaryMenu(menu: SystemMenuResponse): boolean {
+  // 同时识别页面键和菜单编码，确保非管理员不会看到字典管理入口。
+  return menu.page_key === 'dictionaryManagement' || menu.menu_code === 'dictionaryManagement'
 }
 
 function containsPromptMenu(menus: SystemMenuResponse[]): boolean {
@@ -163,6 +209,7 @@ export function buildPortalMenus(menus: SystemMenuResponse[]): PortalMenuItem[] 
       return {
         key: menu.menu_id || menu.menu_code,
         pageKey,
+        routePath: normalizeRoutePath(menu.route_path),
         label: menu.menu_name,
         subLabel,
         icon: iconMap[menu.icon || ''] || Settings,

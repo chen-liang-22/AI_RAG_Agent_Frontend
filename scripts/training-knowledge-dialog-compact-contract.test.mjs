@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
-const homeSource = readFileSync(join(root, 'src/features/dashboard/pages/HomePage.vue'), 'utf8')
 const workspaceSource = readFileSync(
   join(root, 'src/features/sales-training/components/TrainingKnowledgeWorkspace.vue'),
   'utf8',
@@ -30,39 +29,6 @@ function assertRuleIncludes(source, selector, expected, message) {
     throw new Error(message)
   }
 }
-
-assertIncludes(
-  homeSource,
-  'const trainingKnowledgeDialogBatchPageSize = 6',
-  '知识库管理弹窗内训练资料分页数量应使用独立常量 6，符合一页展示 6 条资料的交互要求',
-)
-assertIncludes(
-  homeSource,
-  'trainingKnowledgeDialogBatchPageSize,',
-  '首页弹窗读取训练资料时应使用弹窗专用分页数量',
-)
-assertIncludes(
-  homeSource,
-  'list-density="compact"',
-  '知识库管理弹窗里的训练资料工作区应启用紧凑列表模式',
-)
-assertIncludes(
-  homeSource,
-  ':page-size="trainingKnowledgeDialogBatchPageSize"',
-  '训练资料分页组件应展示弹窗专用分页数量',
-)
-assertRuleIncludes(
-  homeSource,
-  '.training-knowledge-dialog-body',
-  'grid-template-columns: minmax(270px, 315px) minmax(0, 1fr)',
-  '知识库管理弹窗左侧上传栏需要保持紧凑宽度，给已上传资料让出空间',
-)
-assertRuleIncludes(
-  homeSource,
-  '.training-knowledge-dialog-body',
-  'height: 100%',
-  '知识库管理弹窗内容区需要占满弹窗主体，避免已上传资料区域拥挤',
-)
 
 assertIncludes(
   workspaceSource,
@@ -109,4 +75,4 @@ assertRuleIncludes(
   '紧凑模式下资料条目仍需要保留宽松行高，避免信息贴得太紧',
 )
 
-console.log('知识库管理弹窗训练资料紧凑列表契约检查通过')
+console.log('训练资料工作区紧凑列表契约检查通过')

@@ -11,6 +11,7 @@ const requiredFragments = [
   "import('./features/system/pages/UserManagementPage.vue')",
   "import('./features/system/pages/RoleManagementPage.vue')",
   "import('./features/system/pages/MenuManagementPage.vue')",
+  "import('./features/system/pages/DictionaryManagementPage.vue')",
 ]
 
 for (const fragment of requiredFragments) {

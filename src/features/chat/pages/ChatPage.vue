@@ -1,18 +1,14 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue' // ref 创建响应式数据；computed 创建派生数据；nextTick 等 DOM 更新；watch 监听主题变化；onMounted 页面挂载后执行
 import {
-  ArrowLeft, // 返回上一级图标
   Bot, // 机器人图标
-  ChevronRight, // 进入详情图标
   Clock3, // 聊天记录图标
-  DatabaseZap, // 知识库图标
   Eye, // 文件预览图标
   FileText, // 文件图标
   MessageCirclePlus, // 继续聊天图标
   LoaderCircle, // 加载中旋转图标
   MessageSquareText, // 会话详情图标
   Moon, // 深色模式图标
-  Pencil, // 修改图标
   RefreshCw, // 刷新图标
   Search, // 搜索/故障排查图标
   Send, // 发送图标
@@ -25,10 +21,6 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus' // Element Plus 的全局消息提示和确认弹窗
 import {
   confirmKnowledgeUpload, // 确认上传预览结果并正式入库
-  createDictionaryGroup, // 新增父级字典
-  createDictionaryItem, // 新增字典项
-  deleteDictionaryGroup, // 删除父级字典
-  deleteDictionaryItem, // 删除字典项
   deleteConversation, // 删除后端聊天记录
   deleteKnowledgeFile, // 删除后端知识库文件
   fetchHealth, // 调用后端健康检查接口
@@ -42,9 +34,6 @@ import {
   reindexKnowledgeFile, // 重新索引后端知识库文件
   sendChat, // 调用一次性聊天接口
   sendChatStream, // 调用流式聊天接口
-  setDictionaryItemEnabled, // 启用或禁用字典项
-  updateDictionaryGroup, // 修改父级字典
-  updateDictionaryItem, // 修改字典项
   type HealthResponse, // 健康检查响应类型
   type ConversationDetailResponse, // 聊天记录详情响应类型
   type ConversationSummaryResponse, // 聊天记录列表项响应类型
@@ -77,23 +66,6 @@ interface ChatMessage { // 页面聊天消息的数据结构
 
 type OutputMode = string // 输出模式，具体可选值来自 output_mode 字典
 type ThemeMode = 'dark' | 'light' // 页面主题模式：深色科技风或浅色商务风
-
-interface DictionaryFormState { // 字典项编辑表单
-  dictionaryCode: string
-  dictionaryName: string
-  itemCode: string
-  itemName: string
-  parentItemId: string
-  sortOrder: number
-  enabled: boolean
-  description: string
-  metadataText: string
-}
-
-interface DictionaryGroupFormState { // 父级字典编辑表单
-  dictionaryCode: string
-  dictionaryName: string
-}
 
 const userPool = ['1001', '1002', '1003', '1004', '1005', '1006', '1007', '1008', '1009', '1010'] // 模拟用户 ID 池
 
@@ -165,34 +137,8 @@ const conversations = ref<ConversationSummaryResponse[]>([]) // 当前页聊天�
 const conversationKeyword = ref('') // 聊天记录名称模糊查询关键词
 const selectedConversation = ref<ConversationDetailResponse | null>(null) // 当前选中的聊天记录详情
 const activeConversationAction = ref('') // 当前正在执行的会话操作，用于控制单行按钮 loading
-const dictionaryDialogVisible = ref(false) // 字典表弹窗是否可见
 const dictionaryLoading = ref(false) // 是否正在加载字典表
 const dictionaryGroups = ref<DictionaryGroupResponse[]>([]) // 后端返回的字典分组列表
-const activeDictionaryCode = ref('') // 当前进入的父级字典编码；为空时展示父级字典列表
-const dictionaryPage = ref(1) // 父级字典列表当前页码
-const dictionaryPageSize = 8 // 父级字典列表每页展示数量
-const dictionaryItemDialogVisible = ref(false) // 字典项新增/编辑弹窗是否可见
-const dictionaryItemSaving = ref(false) // 字典项保存中
-const dictionaryGroupDialogVisible = ref(false) // 父级字典新增/编辑弹窗是否可见
-const dictionaryGroupSaving = ref(false) // 父级字典保存中
-const activeDictionaryAction = ref('') // 当前字典项操作 key，用于控制单行 loading
-const editingDictionaryItemId = ref('') // 当前正在编辑的字典项 ID；为空表示新增
-const editingDictionaryGroupCode = ref('') // 当前正在编辑的父级字典编码；为空表示新增
-const dictionaryGroupForm = ref<DictionaryGroupFormState>({
-  dictionaryCode: '',
-  dictionaryName: '',
-})
-const dictionaryForm = ref<DictionaryFormState>({
-  dictionaryCode: '',
-  dictionaryName: '',
-  itemCode: '',
-  itemName: '',
-  parentItemId: '',
-  sortOrder: 0,
-  enabled: true,
-  description: '',
-  metadataText: '{}',
-})
 const themeMode = ref<ThemeMode>(props.themeMode || readInitialThemeMode()) // 当前页面主题，默认深色并支持本地持久化
 const themeToggleIcon = computed(() => (themeMode.value === 'dark' ? Sun : Moon)) // 当前主题切换按钮图标
 
@@ -287,14 +233,6 @@ watch(conversationKeyword, () => { // 聊天记录名称搜索变化时重新查
   }
 })
 
-watch(dictionaryGroups, () => { // 字典刷新后，如果当前详情不存在了就回到父级列表
-  if (activeDictionaryCode.value && !dictionaryGroups.value.some((group) => group.dictionary_code === activeDictionaryCode.value)) {
-    activeDictionaryCode.value = ''
-  }
-  const maxPage = Math.max(1, Math.ceil(dictionaryGroups.value.length / dictionaryPageSize))
-  dictionaryPage.value = Math.min(dictionaryPage.value, maxPage)
-})
-
 const knowledgeFilesInActiveCollection = computed(() => { // 先按当前知识库 tab 过滤文件
   if (!activeKnowledgeCollection.value) return knowledgeFiles.value
   return knowledgeFiles.value.filter((file) => file.collection_name === activeKnowledgeCollection.value)
@@ -381,31 +319,6 @@ function dictionaryCodeByMetadata(dictionaryCode: string, key: string, value: un
   return dictionaryItems(dictionaryCode).find((item) => item.metadata?.[key] === value)?.item_code || ''
 }
 
-const pagedDictionaryGroups = computed(() => { // 父级字典分页列表
-  const start = (dictionaryPage.value - 1) * dictionaryPageSize
-  return dictionaryGroups.value.slice(start, start + dictionaryPageSize)
-})
-
-const activeDictionaryGroup = computed(() => ( // 当前进入详情的父级字典
-  dictionaryGroups.value.find((group) => group.dictionary_code === activeDictionaryCode.value) || null
-))
-
-function dictionaryGroupItemCount(group: DictionaryGroupResponse) { // 统计当前父级字典下所有层级的字典项数量
-  return flattenDictionaryItems(group.items).length
-}
-
-function openDictionaryGroup(group: DictionaryGroupResponse) { // 进入某个父级字典的子级列表
-  activeDictionaryCode.value = group.dictionary_code
-}
-
-function backToDictionaryGroups() { // 返回父级字典列表
-  activeDictionaryCode.value = ''
-}
-
-function handleDictionaryPageChange(page: number) { // 父级字典分页
-  dictionaryPage.value = page
-}
-
 async function confirmDangerOnce(
   message: string,
   title: string,
@@ -424,201 +337,6 @@ async function confirmDangerOnce(
     return true
   } catch {
     return false
-  }
-}
-
-function openCreateDictionaryGroupDialog() { // 打开新增父级字典弹窗
-  editingDictionaryGroupCode.value = ''
-  dictionaryGroupForm.value = {
-    dictionaryCode: '',
-    dictionaryName: '',
-  }
-  dictionaryGroupDialogVisible.value = true
-}
-
-function openEditDictionaryGroupDialog(group: DictionaryGroupResponse) { // 打开修改父级字典弹窗
-  editingDictionaryGroupCode.value = group.dictionary_code
-  dictionaryGroupForm.value = {
-    dictionaryCode: group.dictionary_code,
-    dictionaryName: group.dictionary_name,
-  }
-  dictionaryGroupDialogVisible.value = true
-}
-
-async function saveDictionaryGroup() { // 保存父级字典
-  if (dictionaryGroupSaving.value) return
-  const form = dictionaryGroupForm.value
-  if (!form.dictionaryCode.trim() || !form.dictionaryName.trim()) {
-    ElMessage.warning('请填写父级字典编码和名称')
-    return
-  }
-
-  dictionaryGroupSaving.value = true
-  try {
-    if (editingDictionaryGroupCode.value) {
-      await updateDictionaryGroup(editingDictionaryGroupCode.value, {
-        dictionary_name: form.dictionaryName.trim(),
-      })
-      ElMessage.success('父级字典已修改')
-    } else {
-      await createDictionaryGroup({
-        dictionary_code: form.dictionaryCode.trim(),
-        dictionary_name: form.dictionaryName.trim(),
-      })
-      ElMessage.success('父级字典已新增')
-    }
-    dictionaryGroupDialogVisible.value = false
-    await refreshDictionaries()
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '父级字典保存失败')
-  } finally {
-    dictionaryGroupSaving.value = false
-  }
-}
-
-function dictionaryActionKey(action: string, dictionaryItemId: string) { // 拼接字典项操作唯一 key
-  return `${action}:${dictionaryItemId}`
-}
-
-function dictionaryParentOptions() { // 当前父级字典下可选择的父节点
-  return activeDictionaryGroup.value ? flattenDictionaryItems(activeDictionaryGroup.value.items) : []
-}
-
-function resetDictionaryForm(group?: DictionaryGroupResponse) { // 重置字典项表单
-  dictionaryForm.value = {
-    dictionaryCode: group?.dictionary_code || '',
-    dictionaryName: group?.dictionary_name || '',
-    itemCode: '',
-    itemName: '',
-    parentItemId: '',
-    sortOrder: 0,
-    enabled: true,
-    description: '',
-    metadataText: '{}',
-  }
-  editingDictionaryItemId.value = ''
-}
-
-function openCreateDictionaryItemDialog() { // 打开新增字典项弹窗
-  resetDictionaryForm(activeDictionaryGroup.value || undefined)
-  dictionaryItemDialogVisible.value = true
-}
-
-function openEditDictionaryItemDialog(item: DictionaryItemResponse) { // 打开编辑字典项弹窗
-  editingDictionaryItemId.value = item.dictionary_item_id
-  dictionaryForm.value = {
-    dictionaryCode: item.dictionary_code,
-    dictionaryName: item.dictionary_name,
-    itemCode: item.item_code,
-    itemName: item.item_name,
-    parentItemId: item.parent_item_id || '',
-    sortOrder: item.sort_order,
-    enabled: item.enabled,
-    description: item.description || '',
-    metadataText: JSON.stringify(item.metadata || {}, null, 2),
-  }
-  dictionaryItemDialogVisible.value = true
-}
-
-function parseDictionaryMetadata() { // 解析表单中的 metadata JSON
-  const rawText = dictionaryForm.value.metadataText.trim()
-  if (!rawText) return {}
-  const parsed = JSON.parse(rawText)
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error('扩展元数据必须是 JSON 对象')
-  }
-  return parsed as Record<string, unknown>
-}
-
-async function saveDictionaryItem() { // 保存新增或修改的字典项
-  if (dictionaryItemSaving.value) return
-  const form = dictionaryForm.value
-  if (!form.dictionaryCode.trim() || !form.dictionaryName.trim() || !form.itemCode.trim() || !form.itemName.trim()) {
-    ElMessage.warning('请填写字典编码、字典名称、项编码和项名称')
-    return
-  }
-
-  dictionaryItemSaving.value = true
-  try {
-    const payload = {
-      dictionary_code: form.dictionaryCode.trim(),
-      dictionary_name: form.dictionaryName.trim(),
-      item_code: form.itemCode.trim(),
-      item_name: form.itemName.trim(),
-      parent_item_id: form.parentItemId || null,
-      sort_order: Number(form.sortOrder) || 0,
-      enabled: form.enabled,
-      description: form.description.trim() || null,
-      metadata: parseDictionaryMetadata(),
-    }
-    if (editingDictionaryItemId.value) {
-      await updateDictionaryItem(editingDictionaryItemId.value, payload)
-      ElMessage.success('字典项已修改')
-    } else {
-      await createDictionaryItem(payload)
-      ElMessage.success('字典项已新增')
-    }
-    dictionaryItemDialogVisible.value = false
-    await refreshDictionaries()
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '字典项保存失败')
-  } finally {
-    dictionaryItemSaving.value = false
-  }
-}
-
-async function toggleDictionaryItemEnabled(item: DictionaryItemResponse) { // 启用或禁用字典项
-  const nextEnabled = !item.enabled
-  activeDictionaryAction.value = dictionaryActionKey('enabled', item.dictionary_item_id)
-  try {
-    await setDictionaryItemEnabled(item.dictionary_item_id, nextEnabled)
-    ElMessage.success(nextEnabled ? '字典项已启用' : '字典项已禁用')
-    await refreshDictionaries()
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '启用状态更新失败')
-  } finally {
-    activeDictionaryAction.value = ''
-  }
-}
-
-async function handleDeleteDictionaryItem(item: DictionaryItemResponse) { // 删除字典项
-  const confirmed = await confirmDangerOnce(
-    `确定删除字典项「${item.item_name}」吗？存在子级时需要先删除子级。`,
-    '删除字典项',
-    '删除',
-  )
-  if (!confirmed) return
-  activeDictionaryAction.value = dictionaryActionKey('delete', item.dictionary_item_id)
-  try {
-    await deleteDictionaryItem(item.dictionary_item_id)
-    ElMessage.success('字典项已删除')
-    await refreshDictionaries()
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '字典项删除失败')
-  } finally {
-    activeDictionaryAction.value = ''
-  }
-}
-
-async function handleDeleteDictionaryGroup(group: DictionaryGroupResponse) { // 删除父级字典及其全部子项
-  const confirmed = await confirmDangerOnce(
-    `确定删除父级字典「${group.dictionary_name}」吗？这会删除 ${dictionaryGroupItemCount(group)} 个字典项，无法撤销。`,
-    '删除父级字典',
-    '删除父级',
-  )
-  if (!confirmed) return
-  activeDictionaryAction.value = `group:${group.dictionary_code}`
-  try {
-    await deleteDictionaryGroup(group.dictionary_code)
-    ElMessage.success('父级字典已删除')
-    if (activeDictionaryCode.value === group.dictionary_code) {
-      activeDictionaryCode.value = ''
-    }
-    await refreshDictionaries()
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '父级字典删除失败')
-  } finally {
-    activeDictionaryAction.value = ''
   }
 }
 
@@ -1156,7 +874,7 @@ onMounted(() => { // Vue 组件挂载完成后执行
           <Bot :size="24" />
         </div>
         <div>
-          <h1>知习台</h1>
+          <h1>知域</h1>
           <p>知识库智能问答</p>
         </div>
       </div>
@@ -1197,7 +915,7 @@ onMounted(() => { // Vue 组件挂载完成后执行
       <header class="chat-header">
         <div>
           <h2>智能客服</h2>
-          <p>Direct RAG · 智能检索中枢</p>
+          <p>知域 Nexus · 智能检索中枢</p>
         </div>
         <div class="quick-actions">
           <el-button
@@ -1361,235 +1079,6 @@ onMounted(() => { // Vue 组件挂载完成后执行
         </div>
       </footer>
     </section>
-
-    <el-dialog
-      v-model="dictionaryDialogVisible"
-      :class="['dictionary-dialog', `theme-${themeMode}`]"
-      title="字典表"
-      width="1080px"
-    >
-      <div class="dialog-toolbar">
-        <div class="dialog-toolbar-main">
-          <div>
-            <strong>{{ activeDictionaryGroup ? activeDictionaryGroup.dictionary_name : dictionaryGroups.length }}</strong>
-            <span>{{ activeDictionaryGroup ? activeDictionaryGroup.dictionary_code : '组字典' }}</span>
-            <em>{{ activeDictionaryGroup ? `${dictionaryGroupItemCount(activeDictionaryGroup)} 个字典项` : '点击父级字典进入子集' }}</em>
-          </div>
-        </div>
-        <div class="dialog-actions">
-          <el-button v-if="activeDictionaryGroup" :icon="ArrowLeft" @click="backToDictionaryGroups">
-            返回父级
-          </el-button>
-          <el-button v-if="!activeDictionaryGroup" type="primary" @click="openCreateDictionaryGroupDialog">
-            新增父级
-          </el-button>
-          <el-button v-if="activeDictionaryGroup" type="primary" @click="openCreateDictionaryItemDialog">
-            新增字典项
-          </el-button>
-          <el-button
-            v-if="activeDictionaryGroup"
-            :icon="Trash2"
-            plain
-            type="danger"
-            :loading="activeDictionaryAction === `group:${activeDictionaryGroup.dictionary_code}`"
-            @click="handleDeleteDictionaryGroup(activeDictionaryGroup)"
-          >
-            删除父级
-          </el-button>
-          <el-button :icon="RefreshCw" :loading="dictionaryLoading" @click="refreshDictionaries">
-            刷新
-          </el-button>
-        </div>
-      </div>
-
-      <div v-loading="dictionaryLoading" class="dictionary-dialog-body">
-        <div v-if="dictionaryGroups.length === 0" class="empty-knowledge">
-          暂无字典项
-        </div>
-        <template v-else-if="!activeDictionaryGroup">
-          <div class="dictionary-parent-grid">
-            <button
-              v-for="group in pagedDictionaryGroups"
-              :key="group.dictionary_code"
-              type="button"
-              class="dictionary-parent-card"
-              @click="openDictionaryGroup(group)"
-            >
-              <span class="dictionary-parent-icon">
-                <DatabaseZap :size="18" />
-              </span>
-              <span class="dictionary-parent-content">
-                <strong>{{ group.dictionary_name }}</strong>
-                <code>{{ group.dictionary_code }}</code>
-                <em>{{ dictionaryGroupItemCount(group) }} 个字典项</em>
-              </span>
-              <span class="dictionary-parent-actions">
-                <el-button
-                  :icon="Pencil"
-                  circle
-                  size="small"
-                  @click.stop="openEditDictionaryGroupDialog(group)"
-                />
-                <ChevronRight :size="18" />
-              </span>
-            </button>
-          </div>
-        </template>
-        <section v-else class="dictionary-group">
-          <div class="dictionary-group-title">
-            <strong>{{ activeDictionaryGroup.dictionary_name }}</strong>
-            <code>{{ activeDictionaryGroup.dictionary_code }}</code>
-          </div>
-          <el-table
-            :data="activeDictionaryGroup.items"
-            row-key="dictionary_item_id"
-            default-expand-all
-            :tree-props="{ children: 'children' }"
-            size="small"
-          >
-            <el-table-column prop="item_name" label="名称" min-width="160" />
-            <el-table-column prop="item_code" label="编码" min-width="180" />
-            <el-table-column prop="item_level" label="层级" width="80" />
-            <el-table-column prop="sort_order" label="排序" width="80" />
-            <el-table-column label="状态" width="90">
-              <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain" size="small">
-                  {{ row.enabled ? '启用' : '停用' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="description" label="说明" min-width="260" />
-            <el-table-column label="操作" width="230" fixed="right">
-              <template #default="{ row }">
-                <div class="dictionary-row-actions">
-                  <el-button size="small" @click="openEditDictionaryItemDialog(row)">
-                    修改
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :loading="activeDictionaryAction === dictionaryActionKey('enabled', row.dictionary_item_id)"
-                    @click="toggleDictionaryItemEnabled(row)"
-                  >
-                    {{ row.enabled ? '禁用' : '启用' }}
-                  </el-button>
-                  <el-button
-                    plain
-                    size="small"
-                    type="danger"
-                    :loading="activeDictionaryAction === dictionaryActionKey('delete', row.dictionary_item_id)"
-                    @click="handleDeleteDictionaryItem(row)"
-                  >
-                    删除
-                  </el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </section>
-      </div>
-
-      <template #footer>
-        <el-pagination
-          v-if="!activeDictionaryGroup"
-          v-model:current-page="dictionaryPage"
-          background
-          layout="prev, pager, next"
-          :page-size="dictionaryPageSize"
-          :total="dictionaryGroups.length"
-          @current-change="handleDictionaryPageChange"
-        />
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="dictionaryGroupDialogVisible"
-      :class="['dictionary-dialog', `theme-${themeMode}`]"
-      :title="editingDictionaryGroupCode ? '修改父级字典' : '新增父级字典'"
-      width="560px"
-    >
-      <el-form class="dictionary-form" label-position="top">
-        <el-form-item label="父级字典编码">
-          <el-input
-            v-model="dictionaryGroupForm.dictionaryCode"
-            :disabled="Boolean(editingDictionaryGroupCode)"
-            placeholder="例如：chat_model"
-          />
-        </el-form-item>
-        <el-form-item label="父级字典名称">
-          <el-input v-model="dictionaryGroupForm.dictionaryName" placeholder="例如：聊天模型" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dictionaryGroupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="dictionaryGroupSaving" @click="saveDictionaryGroup">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="dictionaryItemDialogVisible"
-      :class="['dictionary-dialog', `theme-${themeMode}`]"
-      :title="editingDictionaryItemId ? '修改字典项' : '新增字典项'"
-      width="720px"
-    >
-      <el-form class="dictionary-form" label-position="top">
-        <div class="dictionary-form-grid">
-          <el-form-item label="字典编码">
-            <el-input v-model="dictionaryForm.dictionaryCode" :disabled="Boolean(editingDictionaryItemId)" />
-          </el-form-item>
-          <el-form-item label="字典名称">
-            <el-input v-model="dictionaryForm.dictionaryName" />
-          </el-form-item>
-          <el-form-item label="项编码">
-            <el-input v-model="dictionaryForm.itemCode" />
-          </el-form-item>
-          <el-form-item label="项名称">
-            <el-input v-model="dictionaryForm.itemName" />
-          </el-form-item>
-          <el-form-item label="父级字典项">
-            <el-select v-model="dictionaryForm.parentItemId" clearable filterable placeholder="不选择则为一级项">
-              <el-option label="无父级" value="" />
-              <el-option
-                v-for="item in dictionaryParentOptions()"
-                :key="item.dictionary_item_id"
-                :disabled="item.dictionary_item_id === editingDictionaryItemId"
-                :label="`${item.item_name}（${item.item_code}）`"
-                :value="item.dictionary_item_id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="排序">
-            <el-input-number v-model="dictionaryForm.sortOrder" :min="0" :step="1" controls-position="right" />
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-switch
-              v-model="dictionaryForm.enabled"
-              active-text="启用"
-              inactive-text="禁用"
-              inline-prompt
-            />
-          </el-form-item>
-          <el-form-item label="说明">
-            <el-input v-model="dictionaryForm.description" />
-          </el-form-item>
-        </div>
-        <el-form-item label="扩展元数据 JSON">
-          <el-input
-            v-model="dictionaryForm.metadataText"
-            type="textarea"
-            :autosize="{ minRows: 4, maxRows: 8 }"
-            placeholder='例如：{"default": true}'
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dictionaryItemDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="dictionaryItemSaving" @click="saveDictionaryItem">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog
       v-model="knowledgeDialogVisible"

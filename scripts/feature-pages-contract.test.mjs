@@ -10,6 +10,7 @@ const featureEntries = [
   'src/features/system/pages/UserManagementPage.vue',
   'src/features/system/pages/RoleManagementPage.vue',
   'src/features/system/pages/MenuManagementPage.vue',
+  'src/features/system/pages/DictionaryManagementPage.vue',
 ]
 
 for (const file of featureEntries) {

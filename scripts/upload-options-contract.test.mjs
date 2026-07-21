@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = process.cwd()
-const homeSource = readFileSync(join(root, 'src/features/dashboard/pages/HomePage.vue'), 'utf8')
 const uploadPanelSource = readFileSync(
   join(root, 'src/features/sales-training/components/TrainingKnowledgeUploadPanel.vue'),
   'utf8',
@@ -38,16 +37,6 @@ assertIncludes(
   '上传能力响应类型缺失，页面无法获得 accept 和展示文案',
 )
 assertIncludes(
-  homeSource,
-  ':accept="knowledgeUploadAccept"',
-  '通用知识库上传 input 应绑定后端返回的 accept',
-)
-assertIncludes(
-  homeSource,
-  ':upload-accept="knowledgeUploadAccept"',
-  '销售训练上传面板应复用同一份上传 accept',
-)
-assertIncludes(
   salesTrainingSource,
   ':upload-accept="knowledgeUploadAccept"',
   '销售训练主页面也应复用后端返回的上传 accept',
@@ -78,11 +67,6 @@ assertIncludes(
   '训练资料上传面板需要使用动态文件类型文案',
 )
 
-assertNotIncludes(
-  homeSource,
-  'accept=".txt,.pdf"',
-  '通用知识库上传仍写死 .txt,.pdf',
-)
 assertNotIncludes(
   uploadPanelSource,
   'accept=".docx,.pdf,.txt"',
