@@ -54,7 +54,7 @@ import {
   type KnowledgeFilePreviewResponse, // 已入库文件预览响应类型
   type KnowledgeUploadPreviewResponse, // 上传预览响应类型
   type KnowledgeUploadRecommendResponse, // 模型推荐切分方式响应类型
-  type ModelMode, // 回答模型档位类型
+  type ChatModelName, // 聊天模型名称类型
   type AuthUser, // 当前登录用户类型
 } from '../../../shared/api' // 前端 API 请求封装
 import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue' // 站内文件预览弹窗
@@ -70,6 +70,7 @@ interface ChatMessage { // 页面聊天消息的数据结构
   role: 'user' | 'assistant' // 消息角色：用户或助手
   content: string // 消息正文
   pending?: boolean // 助手消息是否还在生成中
+  modelName?: ChatModelName | null // 助手回答实际使用的聊天模型
   firstTokenMs?: number | null // 助手首字/首片返回耗时
   totalMs?: number | null // 助手完整回答总耗时
 }
@@ -199,7 +200,7 @@ const themeToggleIcon = computed(() => (themeMode.value === 'dark' ? Sun : Moon)
 // - stream：调用 `/chat/stream`，后端通过 SSE 一段段返回，页面实时追加。
 // - once：调用 `/chat`，后端完整生成后返回 JSON，页面一次性展示。
 const outputMode = ref<OutputMode>('') // 输出模式，默认值由 output_mode 字典提供
-const modelMode = ref<ModelMode>('') // 回答模型档位，默认值由 model_mode 字典提供
+const modelName = ref<ChatModelName>('') // 显式选择的聊天模型；为空时由 Prompt 配置决定
 const selectedCollectionName = ref('agent') // 当前聊天检索使用的 Qdrant collection
 const selectedUploadCollection = ref('agent') // 当前上传文件将写入的 Qdrant collection
 
@@ -349,13 +350,31 @@ function flattenDictionaryItems(items: DictionaryItemResponse[]): DictionaryItem
   return items.flatMap((item) => [item, ...flattenDictionaryItems(item.children || [])])
 }
 
-function dictionaryItems(dictionaryCode: string) { // 按字典编码读取启用字典项
+function allDictionaryItems(dictionaryCode: string) { // 按字典编码读取全部字典项，包含已停用项
   const group = dictionaryGroups.value.find((item) => item.dictionary_code === dictionaryCode)
-  return flattenDictionaryItems(group?.items || []).filter((item) => item.enabled)
+  return flattenDictionaryItems(group?.items || [])
+}
+
+function dictionaryItems(dictionaryCode: string) { // 按字典编码读取启用字典项
+  return allDictionaryItems(dictionaryCode).filter((item) => item.enabled)
+}
+
+const chatModelItems = computed(() => allDictionaryItems('chat_model')) // 全部聊天模型字典项，仅用于解析历史模型名称
+const enabledChatModelItems = computed(() => chatModelItems.value.filter((item) => item.enabled)) // 启用的聊天模型，仅供下拉选择
+
+function clearUnavailableChatModel() { // 字典加载完成后清除已停用或已删除的当前聊天模型
+  if (modelName.value && !enabledChatModelItems.value.some((item) => item.item_code === modelName.value)) {
+    modelName.value = ''
+  }
 }
 
 function dictionaryDefaultCode(dictionaryCode: string) { // 取某组字典的默认编码，默认使用排序最靠前的启用项
   return dictionaryItems(dictionaryCode)[0]?.item_code || ''
+}
+
+function chatModelLabel(value: string) { // 按聊天模型字典显示名称，字典缺失时保留后端模型编码
+  if (!value) return '使用 Prompt 配置'
+  return chatModelItems.value.find((item) => item.item_code === value)?.item_name || value
 }
 
 function dictionaryCodeByMetadata(dictionaryCode: string, key: string, value: unknown) { // 按字典 metadata 读取具有特定业务含义的字典项编码
@@ -645,10 +664,10 @@ async function refreshDictionaries() { // 刷新系统字典表
   dictionaryLoading.value = true // 打开字典加载状态
   try {
     dictionaryGroups.value = await listDictionaries() // 从后端读取全部字典分组
+    clearUnavailableChatModel() // 请求成功后再校验，避免字典初次加载前误清空用户选择
     selectedDocumentType.value ||= dictionaryDefaultCode('document_structure') // 上传文档结构默认取字典第一项
     selectedSplitStrategy.value ||= dictionaryDefaultCode('split_strategy') // 上传切分策略默认取字典第一项
     outputMode.value ||= dictionaryDefaultCode('output_mode') // 输出模式默认取字典第一项
-    modelMode.value ||= dictionaryDefaultCode('model_mode') // 模型档位默认取字典第一项
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '字典表加载失败') // 展示字典加载错误
   } finally {
@@ -813,6 +832,7 @@ async function continueConversation() { // 从聊天记录继续当前会话
       role: message.role === 'assistant' ? 'assistant' : 'user',
       content: message.content,
       pending: false,
+      modelName: message.role === 'assistant' ? message.model_name : undefined,
       firstTokenMs: message.role === 'assistant' ? message.first_token_ms : undefined,
       totalMs: message.role === 'assistant' ? message.total_ms : undefined,
     })) // 把数据库消息转换成主聊天区消息
@@ -1055,7 +1075,7 @@ async function handleSend() { // 发送消息主函数
         question, // 用户问题
         userId.value, // 当前用户 ID
         conversationId.value, // 当前会话 ID，首轮为空
-        modelMode.value, // 当前回答模型档位
+        modelName.value, // 当前显式选择的聊天模型，为空时请求不覆盖 Prompt 配置
         selectedCollectionName.value, // 当前检索的 Qdrant collection
         async (chunk) => { // 每收到一个 chunk，就执行这个回调
           messages.value[assistantMessageIndex].content += chunk // 把 chunk 追加到助手消息正文
@@ -1064,7 +1084,10 @@ async function handleSend() { // 发送消息主函数
         (nextConversationId) => { // 后端在 meta/done 事件里返回会话 ID
           conversationId.value = nextConversationId // 保存后续请求使用
         },
-        (metrics) => { // 后端 metric/done 事件返回耗时
+        (metrics) => { // 后端 meta/metric/done 事件返回实际模型和耗时
+          if (metrics.model_name) {
+            messages.value[assistantMessageIndex].modelName = metrics.model_name // 保存实际使用的聊天模型
+          }
           if (metrics.first_token_ms !== undefined && metrics.first_token_ms !== null) {
             messages.value[assistantMessageIndex].firstTokenMs = metrics.first_token_ms // 更新首字耗时
           }
@@ -1083,12 +1106,13 @@ async function handleSend() { // 发送消息主函数
         question,
         userId.value,
         conversationId.value,
-        modelMode.value,
+        modelName.value,
         selectedCollectionName.value,
         controller.signal,
       ) // 调用一次性接口并等待完整回答
       conversationId.value = response.conversation_id || conversationId.value // 保存后续请求使用
       messages.value[assistantMessageIndex].content = response.answer || '没有返回内容' // 一次性填充助手消息
+      messages.value[assistantMessageIndex].modelName = response.model_name ?? null // 保存实际使用的聊天模型
       messages.value[assistantMessageIndex].firstTokenMs = response.first_token_ms ?? response.total_ms ?? null // 一次性没有真实首字，显示完整耗时
       messages.value[assistantMessageIndex].totalMs = response.total_ms ?? null // 更新总耗时
     }
@@ -1152,8 +1176,8 @@ onMounted(() => { // Vue 组件挂载完成后执行
             <span class="status-chip">{{ dictionaryItems('output_mode').find((item) => item.item_code === outputMode)?.item_name || '默认' }}</span>
           </div>
           <div class="status-row">
-            <span>模型档位</span>
-            <span class="status-chip">{{ dictionaryItems('model_mode').find((item) => item.item_code === modelMode)?.item_name || '默认' }}</span>
+            <span>聊天模型</span>
+            <span class="status-chip">{{ chatModelLabel(modelName) }}</span>
           </div>
           <div class="status-row">
             <span>用户</span>
@@ -1236,9 +1260,13 @@ onMounted(() => { // Vue 组件挂载完成后执行
               <LoaderCircle v-if="message.pending" class="spin pending-icon" :size="18" />
             </div>
             <div
-              v-if="message.role === 'assistant' && (message.firstTokenMs !== undefined || message.totalMs !== undefined)"
+              v-if="
+                message.role === 'assistant'
+                && (message.modelName || message.firstTokenMs !== undefined || message.totalMs !== undefined)
+              "
               class="message-metrics"
             >
+              <span v-if="message.modelName">模型 {{ chatModelLabel(message.modelName) }}</span>
               <span>首字 {{ formatDuration(message.firstTokenMs) }}</span>
               <span>总耗时 {{ formatDuration(message.totalMs) }}</span>
             </div>
@@ -1298,14 +1326,16 @@ onMounted(() => { // Vue 组件挂载完成后执行
             发送
           </el-button>
           <el-select
-            v-model="modelMode"
-            class="model-mode-select"
+            v-model="modelName"
+            class="model-name-select"
             size="large"
+            clearable
+            placeholder="使用 Prompt 配置"
             :disabled="loading"
             :teleported="false"
           >
             <el-option
-              v-for="item in dictionaryItems('model_mode')"
+              v-for="item in enabledChatModelItems"
               :key="item.item_code"
               :label="item.item_name"
               :value="item.item_code"
@@ -1482,11 +1512,11 @@ onMounted(() => { // Vue 组件挂载完成后执行
           <el-input
             v-model="dictionaryGroupForm.dictionaryCode"
             :disabled="Boolean(editingDictionaryGroupCode)"
-            placeholder="例如：model_mode"
+            placeholder="例如：chat_model"
           />
         </el-form-item>
         <el-form-item label="父级字典名称">
-          <el-input v-model="dictionaryGroupForm.dictionaryName" placeholder="例如：回答模型档位" />
+          <el-input v-model="dictionaryGroupForm.dictionaryName" placeholder="例如：聊天模型" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1793,7 +1823,13 @@ onMounted(() => { // Vue 组件挂载完成后执行
               >
                 <div class="history-message-meta">
                   <span>{{ messageRoleLabel(message.role) }}</span>
-                  <small>{{ formatDateTime(message.created_at) }}</small>
+                  <small>
+                    {{
+                      message.model_name
+                        ? `${chatModelLabel(message.model_name)} · `
+                        : ''
+                    }}{{ formatDateTime(message.created_at) }}
+                  </small>
                 </div>
                 <p>{{ message.content }}</p>
               </article>

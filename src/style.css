@@ -2059,7 +2059,7 @@ button, input, textarea { font: inherit; }
   padding: 12px;
 }
 
-.model-mode-select,
+.model-name-select,
 .collection-select {
   width: 100%;
 }

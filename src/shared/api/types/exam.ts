@@ -19,7 +19,7 @@ export interface ExamStartPayload { // `/exam/sessions` 开始考试请求结构
   user_id?: string | null // 用户编号
   round_count: number // 考试轮数
   question_types: ExamQuestionType[] // 随机题型范围
-  model_mode?: string | null // 主观题分析模型档位
+  model_name?: string | null // 本场考试显式选择的聊天模型，为空时使用 Prompt 配置
   seed?: number | null // 随机种子
 }
 

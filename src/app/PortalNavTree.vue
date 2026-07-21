@@ -13,12 +13,12 @@ const emit = defineEmits<{
   open: [item: PortalMenuItem]
 }>()
 
-const expandedKeys = ref<Set<string>>(new Set())
+const expandedKeys = ref<string[]>([])
 const activeKeySignature = computed(() => Array.from(props.activeKeys).sort().join('|'))
 
 watch(activeKeySignature, () => {
-  // 当前页面所在路径保持展开，其他目录默认收起，支持任意层级菜单。
-  expandedKeys.value = new Set(props.activeKeys)
+  // 当前页面所在路径自动展开，同时保留用户手动展开的其他目录。
+  expandedKeys.value = Array.from(new Set([...expandedKeys.value, ...props.activeKeys]))
 }, { immediate: true })
 
 function hasChildren(item: PortalMenuItem) {
@@ -26,17 +26,13 @@ function hasChildren(item: PortalMenuItem) {
 }
 
 function isExpanded(item: PortalMenuItem) {
-  return expandedKeys.value.has(item.key)
+  return expandedKeys.value.includes(item.key)
 }
 
 function toggleDirectory(item: PortalMenuItem) {
-  const nextKeys = new Set(expandedKeys.value)
-  if (nextKeys.has(item.key)) {
-    nextKeys.delete(item.key)
-  } else {
-    nextKeys.add(item.key)
-  }
-  expandedKeys.value = nextKeys
+  expandedKeys.value = isExpanded(item)
+    ? expandedKeys.value.filter((key) => key !== item.key)
+    : [...expandedKeys.value, item.key]
 }
 
 function handleItemClick(item: PortalMenuItem) {

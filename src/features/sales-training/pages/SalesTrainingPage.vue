@@ -57,6 +57,7 @@ import {
 } from '../api'
 import {
   fetchKnowledgeUploadOptions,
+  listDictionaries,
   listTrainingProfileDictionaries,
   type DictionaryGroupResponse,
   type DictionaryItemResponse,
@@ -215,7 +216,7 @@ interface PlanEditDraft {
   customerProfileValues: Record<string, ProfileFieldValue>
   scenarioDescription: string
   extraDetails: string
-  modelMode: string
+  modelName: string
   roleConfirmCardJson: string
   visibleProfileJson: string
   hiddenProfileJson: string
@@ -265,7 +266,7 @@ const experienceLevel = ref('junior')
 const taskGoal = ref('goal_junior')
 const weaknessTagsValue = ref<string[]>(['price_negotiation', 'demand_mining'])
 const studentPortraitOther = ref('')
-const modelMode = ref('high')
+const modelName = ref('')
 const scenarioDescription = ref('客户正在评估新的业务增长方案，但担心成本投入、交付风险和团队执行压力。')
 const extraDetails = ref('学员需要通过提问挖掘客户真实顾虑，并用案例化表达争取客户愿意继续沟通。')
 const traineeProfileConfirmed = ref(false)
@@ -514,7 +515,10 @@ const traineePortraitItems = ref<DictionaryItemResponse[]>([])
 const sourceTypeItems = ref<DictionaryItemResponse[]>([])
 const casePartItems = ref<DictionaryItemResponse[]>([])
 const chunkUsageItems = ref<DictionaryItemResponse[]>([])
+const chatModelItems = ref<DictionaryItemResponse[]>([])
+const enabledChatModelItems = computed(() => chatModelItems.value.filter((item) => item.enabled)) // 启用的聊天模型，仅供下拉选择
 const loadingProfileDictionaries = ref(false)
+const loadingChatModels = ref(false)
 const traineeProfileDialogVisible = ref(false)
 const customerProfileDialogVisible = ref(false)
 const traineeProfileDraft = ref<TraineeProfileDraft>({
@@ -530,7 +534,7 @@ const draftProfileType = ref(profileType.value)
 const draftCustomerProfileValues = ref<Record<string, ProfileFieldValue>>({})
 const draftScenarioDescription = ref(scenarioDescription.value)
 const draftExtraDetails = ref(extraDetails.value)
-const draftModelMode = ref(modelMode.value)
+const draftModelName = ref(modelName.value)
 const publicProfileSources = computed(() => compactProfileSources([
   roleResult.value?.role_confirm_card,
   roleResult.value?.visible_profile,
@@ -650,6 +654,12 @@ const sourceTypeDescription = computed(() => {
 const uploadHelpDescription = computed(() => (
   `一期上传只做文件入库，画像、行业、难度和评分规则不在上传阶段配置。${sourceTypeDescription.value}`
 ))
+
+function chatModelLabel(value: string) { // 按聊天模型字典显示名称，字典缺失时回退原模型编码
+  if (!value) return '使用 Prompt 配置'
+  return chatModelItems.value.find((item) => item.item_code === value)?.item_name || value
+}
+
 const positionRoleLabel = computed(() => traineeOptionLabel('position_role', positionRole.value))
 const draftPositionRoleLabel = computed(() => traineeOptionLabel('position_role', traineeProfileDraft.value.positionRole))
 const experienceLevelLabel = computed(() => traineeOptionLabel('experience_level', experienceLevel.value))
@@ -658,11 +668,7 @@ const taskGoalLabel = computed(() => traineeOptionLabel('task_goal', taskGoal.va
 const draftTaskGoalLabel = computed(() => traineeOptionLabel('task_goal', traineeProfileDraft.value.taskGoal))
 const weaknessTagLabels = computed(() => weaknessTags.value.map((tag) => traineeOptionLabel('weakness_tag', tag)))
 const draftWeaknessTagLabels = computed(() => traineeProfileDraft.value.weaknessTags.map((tag) => traineeOptionLabel('weakness_tag', tag)))
-const modelModeLabel = computed(() => displayOptionLabel(modelMode.value, {
-  high: '高质量',
-  medium: '均衡',
-  low: '低延迟',
-}))
+const modelNameLabel = computed(() => chatModelLabel(modelName.value))
 const traineeProfileTags = computed(() => uniqueList([
   `学员：${traineeName.value}`,
   `职位：${positionRoleLabel.value}`,
@@ -732,7 +738,7 @@ function createEmptyPlanEditDraft(): PlanEditDraft {
     customerProfileValues: {},
     scenarioDescription: '',
     extraDetails: '',
-    modelMode: 'high',
+    modelName: '',
     roleConfirmCardJson: '{}',
     visibleProfileJson: '{}',
     hiddenProfileJson: '{}',
@@ -1221,7 +1227,7 @@ function openCustomerProfileDialog() {
   draftCustomerProfileValues.value = { ...customerProfileValues.value }
   draftScenarioDescription.value = scenarioDescription.value
   draftExtraDetails.value = extraDetails.value
-  draftModelMode.value = modelMode.value
+  draftModelName.value = modelName.value
   syncDraftCustomerProfileDefaults()
   customerProfileDialogVisible.value = true
 }
@@ -1236,7 +1242,7 @@ function confirmCustomerProfileDialog() {
   customerProfileValues.value = { ...draftCustomerProfileValues.value }
   scenarioDescription.value = draftScenarioDescription.value.trim()
   extraDetails.value = draftExtraDetails.value.trim()
-  modelMode.value = draftModelMode.value
+  modelName.value = draftModelName.value
   syncCustomerProfileDefaults()
   customerProfileConfirmed.value = true
   customerProfileDialogVisible.value = false
@@ -1271,7 +1277,7 @@ function currentPlanPayload() {
     },
     scenario_description: scenarioDescription.value,
     extra_details: extraDetails.value,
-    model_mode: modelMode.value,
+    model_name: modelName.value || null,
   }
 }
 
@@ -1313,7 +1319,7 @@ function hydratePlanDetail(detail: TrainingPlanDetailResponse) {
   studentPortraitOther.value = String(trainee.student_portrait_other || '')
   profileType.value = detail.plan.profile_type || profileType.value || DEFAULT_CUSTOMER_PROFILE_TYPE
   restoreCustomerProfileValuesFromDisplay(detail.selected_fields)
-  modelMode.value = detail.plan.model_mode || modelMode.value
+  modelName.value = detail.plan.model_name || ''
   scenarioDescription.value = detail.scenario_description
   extraDetails.value = detail.extra_details
   traineeProfileConfirmed.value = hasDisplayValue(trainee.trainee_id) || hasDisplayValue(trainee.trainee_name)
@@ -1516,7 +1522,7 @@ function openPlanEditDialog() {
     customerProfileValues: restoredCustomerProfileValuesForDetail(detail),
     scenarioDescription: detail.scenario_description,
     extraDetails: detail.extra_details || '',
-    modelMode: detail.plan.model_mode || modelMode.value,
+    modelName: detail.plan.model_name || '',
     roleConfirmCardJson: toPrettyJson(detail.role_confirm_card, {}),
     visibleProfileJson: toPrettyJson(detail.visible_profile, {}),
     hiddenProfileJson: toPrettyJson(detail.hidden_profile, {}),
@@ -1553,7 +1559,7 @@ async function savePlanEdit() {
       selected_fields: planEditSelectedFieldsPayload(),
       scenario_description: planEditDraft.value.scenarioDescription.trim(),
       extra_details: planEditDraft.value.extraDetails.trim(),
-      model_mode: planEditDraft.value.modelMode,
+      model_name: planEditDraft.value.modelName || null,
       role_confirm_card: parseJsonField<Record<string, unknown>>(planEditDraft.value.roleConfirmCardJson, '确认卡片'),
       visible_profile: parseJsonField<Record<string, unknown>>(planEditDraft.value.visibleProfileJson, '可见画像'),
       hidden_profile: parseJsonField<Record<string, unknown>>(planEditDraft.value.hiddenProfileJson, '隐藏画像'),
@@ -1597,7 +1603,7 @@ async function polishScenarioDescription() {
       },
       scenario_description: draftScenarioDescription.value,
       extra_details: draftExtraDetails.value,
-      model_mode: draftModelMode.value,
+      ...(draftModelName.value ? { model_name: draftModelName.value } : {}),
     })
     draftScenarioDescription.value = response.polished_scenario
     ElMessage.success('场景描述已完成 AI 润色')
@@ -1637,6 +1643,19 @@ async function refreshCustomerProfileTemplates() {
     syncCustomerProfileDefaults()
   } finally {
     loadingProfileDictionaries.value = false
+  }
+}
+
+async function refreshChatModels() { // 读取全部聊天模型字典，保留停用项供历史和详情显示
+  loadingChatModels.value = true
+  try {
+    const groups = await listDictionaries('chat_model')
+    chatModelItems.value = groups.find((group) => group.dictionary_code === 'chat_model')?.items || []
+  } catch (error) {
+    chatModelItems.value = []
+    ElMessage.warning(error instanceof Error ? error.message : '聊天模型字典读取失败')
+  } finally {
+    loadingChatModels.value = false
   }
 }
 
@@ -1780,7 +1799,7 @@ function buildRoleGeneratePayload(extraDetailText = extraDetails.value) {
     },
     scenario_description: scenarioDescription.value,
     extra_details: extraDetailText,
-    model_mode: modelMode.value,
+    ...(modelName.value ? { model_name: modelName.value } : {}),
   }
 }
 
@@ -1949,7 +1968,7 @@ async function uploadKnowledge() {
     uploadResult.value = await uploadTrainingKnowledge({
       file: selectedFile.value,
       sourceType: sourceType.value,
-      modelMode: modelMode.value,
+      modelName: modelName.value,
     })
     // 第三步：异步入库只返回任务编号，切片要等后台处理完成后再查。
     activeBatchId.value = uploadResult.value.batch_id
@@ -2063,7 +2082,7 @@ async function reparseTrainingBatch(batch: TrainingKnowledgeBatchResponse | stri
 
   reparsingBatchId.value = batchId
   try {
-    const result = await reparseTrainingKnowledgeBatch(batchId, true, modelMode.value)
+    const result = await reparseTrainingKnowledgeBatch(batchId, true, modelName.value)
     if (uploadResult.value?.batch_id === batchId) {
       uploadResult.value = {
         ...uploadResult.value,
@@ -2322,7 +2341,12 @@ async function generateGoal() {
 
   generatingGoal.value = true
   try {
-    goalSetting.value = await generateTrainingGoalSetting(roleResult.value.profile_id, traineeId.value, modelMode.value, activePlan.value?.plan_id)
+    goalSetting.value = await generateTrainingGoalSetting(
+      roleResult.value.profile_id,
+      traineeId.value,
+      modelName.value,
+      activePlan.value?.plan_id,
+    )
     if (activePlan.value) {
       const detail = await getTrainingPlanDetail(activePlan.value.plan_id)
       hydratePlanDetail(detail)
@@ -2355,7 +2379,7 @@ async function startSession() {
       setting_id: goalSetting.value.setting_id,
       trainee_id: traineeId.value,
       response_mode: responseMode.value,
-      model_mode: modelMode.value,
+      ...(modelName.value ? { model_name: modelName.value } : {}),
     })
     scoreResult.value = null
     messages.value = []
@@ -2368,7 +2392,9 @@ async function startSession() {
         id: `customer-opening-${activeSession.value.session_id}`,
         role: 'customer',
         content: activeSession.value.opening_message,
-        meta: '开场白',
+        meta: activeSession.value.model_name
+          ? `${chatModelLabel(activeSession.value.model_name)} · 开场白`
+          : '开场白',
       })
     } else {
       addSystemMessage('训练已开始。你现在面对的是 AI 客户，请用销售沟通方式推进目标。')
@@ -2425,14 +2451,17 @@ async function submitTurnByBlocking(message: string) {
   const response = await submitTrainingTurn(activeSession.value.session_id, {
     message,
     response_mode: 'blocking',
-    model_mode: modelMode.value,
+    ...(modelName.value ? { model_name: modelName.value } : {}),
   })
   applyTurnDone(response)
   messages.value.push({
     id: `customer-${Date.now()}`,
     role: 'customer',
     content: response.customer_reply,
-    meta: response.response_seconds ? `${response.response_seconds}s` : '一次性',
+    meta: [
+      response.model_name ? chatModelLabel(response.model_name) : '',
+      response.response_seconds ? `${response.response_seconds}s` : '一次性',
+    ].filter(Boolean).join(' · '),
     analysis: response.coach_analysis,
   })
 }
@@ -2454,7 +2483,7 @@ async function submitTurnByStream(message: string) {
       {
         message,
         response_mode: 'stream',
-        model_mode: modelMode.value,
+        ...(modelName.value ? { model_name: modelName.value } : {}),
       },
       {
         onRetrieval: async (payload) => {
@@ -2469,7 +2498,10 @@ async function submitTurnByStream(message: string) {
         },
         onDone: async (payload) => {
           customerMessage.streaming = false
-          customerMessage.meta = payload.response_seconds ? `${payload.response_seconds}s` : '流式完成'
+          customerMessage.meta = [
+            payload.model_name ? chatModelLabel(payload.model_name) : '',
+            payload.response_seconds ? `${payload.response_seconds}s` : '流式完成',
+          ].filter(Boolean).join(' · ')
           if (!customerMessage.content.trim()) {
             customerMessage.content = payload.customer_reply
           }
@@ -2503,7 +2535,7 @@ async function finishAndScore() {
 
   scoring.value = true
   try {
-    scoreResult.value = await generateTrainingFinalScore(activeSession.value.session_id, modelMode.value)
+    scoreResult.value = await generateTrainingFinalScore(activeSession.value.session_id, modelName.value)
     activeSession.value.status = 'completed' as TrainingSessionResponse['status']
     addSystemMessage(`训练评分完成：${scoreResult.value.total_score} 分，等级 ${scoreResult.value.level}。`)
     void refreshTrainingHistory()
@@ -2644,6 +2676,7 @@ onMounted(() => {
   void refreshTrainingHistory()
   void refreshTrainingBatches()
   void refreshCustomerProfileTemplates()
+  void refreshChatModels()
   void refreshTrainingPlans()
   void refreshKnowledgeUploadOptions()
 })
@@ -2907,7 +2940,7 @@ onMounted(() => {
                 <span v-if="customerProfileDisplayTags.length === 0">未配置</span>
               </div>
               <div class="profile-summary-meta compact">
-                <span>模型：{{ modelModeLabel }}</span>
+                <span>模型：{{ modelNameLabel }}</span>
                 <span :title="selectedProfileScenario">摘要：{{ selectedProfileScenario }}</span>
                 <span :title="scenarioDescription">场景：{{ scenarioPreviewText }}</span>
                 <span :title="extraDetails || '未填写'">补充：{{ extraDetailsPreviewText }}</span>
@@ -2935,7 +2968,7 @@ onMounted(() => {
                     创建训练
                   </el-button>
                 </div>
-                <p>创建后再进入学员画像、客户画像、场景描述和模型档位设置。</p>
+                <p>创建后再进入学员画像、客户画像、场景描述和聊天模型设置。</p>
               </section>
               <section class="plan-step-list">
                 <div class="training-plan-filter">
@@ -3321,7 +3354,7 @@ onMounted(() => {
             <span>角色：{{ selectedPlanDetail.plan.role_status }}</span>
             <span>阶段：{{ selectedPlanDetail.plan.goal_status }}</span>
             <span>评分：{{ selectedPlanDetail.plan.score_status }}</span>
-            <span>模型：{{ displayOptionLabel(selectedPlanDetail.plan.model_mode || 'high', { high: '高质量', medium: '均衡', low: '低延迟' }) }}</span>
+            <span>模型：{{ chatModelLabel(selectedPlanDetail.plan.model_name || '') }}</span>
           </div>
         </div>
         <div class="plan-snapshot-overview">
@@ -3364,7 +3397,7 @@ onMounted(() => {
           </header>
           <div class="plan-chip-row">
             <span>画像编码：{{ selectedPlanDetail.plan.profile_type }}</span>
-            <span>模型档位：{{ displayOptionLabel(selectedPlanDetail.plan.model_mode || 'high', { high: '高质量', medium: '均衡', low: '低延迟' }) }}</span>
+            <span>聊天模型：{{ chatModelLabel(selectedPlanDetail.plan.model_name || '') }}</span>
           </div>
           <div class="plan-detail-grid">
             <article
@@ -3559,11 +3592,19 @@ onMounted(() => {
               <el-input v-model="planEditDraft.planName" maxlength="80" show-word-limit />
             </label>
             <label>
-              <span>模型档位</span>
-              <el-select v-model="planEditDraft.modelMode">
-                <el-option label="高质量" value="high" />
-                <el-option label="均衡" value="medium" />
-                <el-option label="低延迟" value="low" />
+              <span>聊天模型</span>
+              <el-select
+                v-model="planEditDraft.modelName"
+                clearable
+                placeholder="使用 Prompt 配置"
+                :loading="loadingChatModels"
+              >
+                <el-option
+                  v-for="item in enabledChatModelItems"
+                  :key="item.item_code"
+                  :label="item.item_name"
+                  :value="item.item_code"
+                />
               </el-select>
             </label>
           </div>
@@ -4004,11 +4045,19 @@ onMounted(() => {
             <b>训练设置</b>
             <div class="training-form-grid two">
               <label>
-                <span>模型档位</span>
-                <el-select v-model="draftModelMode">
-                  <el-option label="高质量" value="high" />
-                  <el-option label="均衡" value="medium" />
-                  <el-option label="低延迟" value="low" />
+                <span>聊天模型</span>
+                <el-select
+                  v-model="draftModelName"
+                  clearable
+                  placeholder="使用 Prompt 配置"
+                  :loading="loadingChatModels"
+                >
+                  <el-option
+                    v-for="item in enabledChatModelItems"
+                    :key="item.item_code"
+                    :label="item.item_name"
+                    :value="item.item_code"
+                  />
                 </el-select>
               </label>
               <label>

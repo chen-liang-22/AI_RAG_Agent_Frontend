@@ -1,6 +1,14 @@
 import { buildRequestHeaders, fetchWithAuth, readErrorMessage, request } from '../../../shared/api/http'
 import type { IngestTaskResponse, TrainingGoalSettingResponse, TrainingKnowledgeBatchListResponse, TrainingKnowledgeChunkListResponse, TrainingKnowledgeDeleteResponse, TrainingKnowledgePreviewResponse, TrainingKnowledgePublishResponse, TrainingKnowledgeReparseResponse, TrainingKnowledgeRollbackResponse, TrainingKnowledgeUploadPayload, TrainingKnowledgeUploadResponse, TrainingKnowledgeVersionListResponse, TrainingPlanCreatePayload, TrainingPlanDeleteResponse, TrainingPlanDetailResponse, TrainingPlanListResponse, TrainingPlanUpdatePayload, TrainingRoleGeneratePayload, TrainingRoleGenerateResponse, TrainingScenarioPolishPayload, TrainingScenarioPolishResponse, TrainingScoreResponse, TrainingSessionDeleteResponse, TrainingSessionDetailResponse, TrainingSessionListResponse, TrainingSessionResponse, TrainingSessionStartPayload, TrainingStreamHandlers, TrainingSupplementQuestionGenerateResponse, TrainingTurnPayload, TrainingTurnResponse } from '../types'
 
+function omitEmptyModelName<T extends { model_name?: string | null }>(payload: T) { // 单次模型请求为空时完全省略 model_name 字段
+  const { model_name: modelName, ...requestPayload } = payload
+  return {
+    ...requestPayload,
+    ...(modelName ? { model_name: modelName } : {}),
+  }
+}
+
 export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPayload) { // 上传销售训练知识并写入临时向量库预览
   // 文件上传必须使用 FormData，让浏览器自动生成 multipart boundary。
   const formData = new FormData()
@@ -8,8 +16,8 @@ export async function uploadTrainingKnowledge(payload: TrainingKnowledgeUploadPa
   formData.append('file', payload.file)
   // source_type 决定后端使用哪一种 KnowledgeIngestStrategy；一期默认 lms_case。
   formData.append('source_type', payload.sourceType || 'lms_case')
-  // model_mode 只影响资料切分阶段的 LLM 兜底；临时向量库 embedding 使用后端统一配置。
-  formData.append('model_mode', payload.modelMode || 'high')
+  // model_name 只影响资料切分阶段的 LLM 兜底；为空时交由 Prompt 配置决定。
+  if (payload.modelName) formData.append('model_name', payload.modelName)
 
   // 上传人只用于审计；当前没有用户体系时可以不传。
   if (payload.createdBy) formData.append('created_by', payload.createdBy)
@@ -58,11 +66,15 @@ export function rollbackTrainingKnowledgeBatch(batchId: string) { // 回滚训�
   })
 }
 
-export function reparseTrainingKnowledgeBatch(batchId: string, useLlmFallback = true, modelMode: string | null = 'high') { // 重新切分未发布训练资料
+export function reparseTrainingKnowledgeBatch(
+  batchId: string,
+  useLlmFallback = true,
+  modelName: string | null = null,
+) { // 重新切分未发布训练资料
   const params = new URLSearchParams({
     use_llm_fallback: String(useLlmFallback),
-    model_mode: modelMode || 'high',
   })
+  if (modelName) params.set('model_name', modelName)
   return request<TrainingKnowledgeReparseResponse>(`/training/knowledge/batches/${encodeURIComponent(batchId)}/reparse?${params.toString()}`, {
     method: 'POST',
   })
@@ -93,7 +105,7 @@ export function retryIngestTask(taskId: string) { // 重试失败的异步入库
 export function createTrainingPlan(payload: TrainingPlanCreatePayload) { // 创建训练方案，名称允许重复，后端用 plan_id 区分
   return request<TrainingPlanDetailResponse>('/training/plans', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitEmptyModelName(payload)),
   })
 }
 
@@ -126,40 +138,45 @@ export function updateTrainingPlan(planId: string, payload: TrainingPlanUpdatePa
 export function generateTrainingRole(payload: TrainingRoleGeneratePayload) { // 根据学员画像和场景生成 AI 客户
   return request<TrainingRoleGenerateResponse>('/training/profiles/generate', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitEmptyModelName(payload)),
   })
 }
 
 export function polishTrainingScenario(payload: TrainingScenarioPolishPayload) { // 根据客户画像用 AI 润色训练场景
   return request<TrainingScenarioPolishResponse>('/training/profiles/scenario/polish', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitEmptyModelName(payload)),
   })
 }
 
 export function generateTrainingSupplementQuestions(payload: TrainingRoleGeneratePayload) { // 生成 AI 客户前的补充问答题
   return request<TrainingSupplementQuestionGenerateResponse>('/training/profiles/supplement-questions/generate', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitEmptyModelName(payload)),
   })
 }
 
-export function generateTrainingGoalSetting(profileId: string, traineeId: string, modelMode?: string | null, planId?: string | null) { // 生成开放式训练目标和动态轮数
+export function generateTrainingGoalSetting(
+  profileId: string,
+  traineeId: string,
+  modelName?: string | null,
+  planId?: string | null,
+) { // 生成开放式训练目标和动态轮数
   return request<TrainingGoalSettingResponse>(`/training/profiles/${encodeURIComponent(profileId)}/goal-settings/generate`, {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(omitEmptyModelName({
       plan_id: planId || null,
       trainee_id: traineeId,
       training_mode: 'open',
-      model_mode: modelMode || null,
-    }),
+      model_name: modelName,
+    })),
   })
 }
 
 export function startTrainingSession(payload: TrainingSessionStartPayload) { // 创建一次销售陪练会话
   return request<TrainingSessionResponse>('/training/sessions', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitEmptyModelName(payload)),
   })
 }
 
@@ -185,12 +202,12 @@ export function deleteTrainingSession(sessionId: string) { // 删除销售陪练
 export function submitTrainingTurn(sessionId: string, payload: TrainingTurnPayload) { // 一次性提交学员回复并等待 AI 客户完整回复
   return request<TrainingTurnResponse>(`/training/sessions/${encodeURIComponent(sessionId)}/turns?stream=false`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitEmptyModelName(payload)),
   })
 }
 
-export function generateTrainingFinalScore(sessionId: string, modelMode?: string | null) { // 结束训练并生成评分报告
-  const query = modelMode ? `?model_mode=${encodeURIComponent(modelMode)}` : ''
+export function generateTrainingFinalScore(sessionId: string, modelName?: string | null) { // 结束训练并生成评分报告
+  const query = modelName ? `?model_name=${encodeURIComponent(modelName)}` : ''
   return request<TrainingScoreResponse>(`/training/sessions/${encodeURIComponent(sessionId)}/final-score${query}`, {
     method: 'POST',
   })
@@ -208,7 +225,7 @@ export async function submitTrainingTurnStream(
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
     }),
-    body: JSON.stringify({ ...payload, response_mode: 'stream' }),
+    body: JSON.stringify({ ...omitEmptyModelName(payload), response_mode: 'stream' }),
     signal,
   })
 

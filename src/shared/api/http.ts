@@ -7,6 +7,16 @@ export const AUTH_EXPIRED_EVENT = 'ai-rag-agent-auth-expired'
 
 let accessToken = ''
 
+export class HttpError extends Error { // 保留 HTTP 状态码，供页面执行权限和资源回退
+  readonly status: number
+
+  constructor(status: number, message: string) { // 创建包含响应状态码的请求异常
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+  }
+}
+
 export function getAccessToken() {
   return accessToken
 }
@@ -119,7 +129,7 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
 
   if (!response.ok) {
     const message = await readErrorMessage(response)
-    throw new Error(message)
+    throw new HttpError(response.status, message)
   }
 
   return response.json() as Promise<T>

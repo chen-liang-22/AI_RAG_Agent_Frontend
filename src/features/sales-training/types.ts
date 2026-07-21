@@ -3,7 +3,7 @@ export type TrainingResponseMode = 'stream' | 'blocking'
 export interface TrainingKnowledgeUploadPayload { // 销售训练知识上传请求
   file: File // LMS 训练案例文件
   sourceType?: string // 知识来源类型，一期默认 lms_case
-  modelMode?: string | null // LLM 兜底切分使用的模型档位，默认 high
+  modelName?: string | null // LLM 兜底切分显式选择的聊天模型，为空时使用 Prompt 配置
   createdBy?: string // 上传人
 }
 
@@ -163,7 +163,7 @@ export interface TrainingRoleGeneratePayload { // 生成 AI 客户角色请求
   selected_fields: Record<string, unknown>
   scenario_description: string
   extra_details: string
-  model_mode?: string | null
+  model_name?: string | null
 }
 
 export interface TrainingScenarioPolishPayload { // AI 润色训练场景请求
@@ -171,7 +171,7 @@ export interface TrainingScenarioPolishPayload { // AI 润色训练场景请求
   selected_fields: Record<string, unknown>
   scenario_description: string
   extra_details?: string
-  model_mode?: string | null
+  model_name?: string | null
 }
 
 export interface TrainingScenarioPolishResponse { // AI 润色训练场景结果
@@ -229,6 +229,7 @@ export interface TrainingGoalSettingResponse { // 训练目标设置
 
 export interface TrainingPlanCreatePayload { // 创建销售训练方案
   plan_name: string
+  model_name?: string | null
 }
 
 export interface TrainingPlanUpdatePayload { // 修改销售训练方案
@@ -238,7 +239,7 @@ export interface TrainingPlanUpdatePayload { // 修改销售训练方案
   selected_fields?: Record<string, unknown>
   scenario_description?: string
   extra_details?: string
-  model_mode?: string | null
+  model_name?: string | null
   role_confirm_card?: Record<string, unknown>
   visible_profile?: Record<string, unknown>
   hidden_profile?: Record<string, unknown>
@@ -255,7 +256,7 @@ export interface TrainingPlanSummaryResponse { // 销售训练方案列表项
   trainee_id: string
   trainee_name: string
   profile_type: string
-  model_mode?: string | null
+  model_name?: string | null
   role_status: string
   goal_status: string
   score_status: string
@@ -296,7 +297,7 @@ export interface TrainingSessionStartPayload { // 开始训练会话请求
   setting_id: string
   trainee_id: string
   response_mode: TrainingResponseMode
-  model_mode?: string | null
+  model_name?: string | null
 }
 
 export interface TrainingSessionResponse { // 训练会话
@@ -310,12 +311,13 @@ export interface TrainingSessionResponse { // 训练会话
   status: string
   round_limit: number
   opening_message?: string | null
+  model_name?: string | null
 }
 
 export interface TrainingTurnPayload { // 提交学员回复请求
   message: string
   response_mode: TrainingResponseMode
-  model_mode?: string | null
+  model_name?: string | null
 }
 
 export interface TrainingTurnResponse { // AI 客户本轮回复
@@ -326,6 +328,7 @@ export interface TrainingTurnResponse { // AI 客户本轮回复
   retrieved_chunk_ids: string[]
   coach_analysis: Record<string, unknown>
   response_seconds?: number | null
+  model_name?: string | null
 }
 
 export interface TrainingScoreResponse { // 训练评分报告

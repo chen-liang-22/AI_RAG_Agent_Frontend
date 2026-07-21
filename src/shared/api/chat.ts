@@ -1,11 +1,11 @@
 import { buildRequestHeaders, fetchWithAuth, request } from './http'
-import type { ChatResponse, ModelMode } from './types'
+import type { ChatModelName, ChatResponse } from './types'
 
 export function sendChat(
   message: string,
   userId: string,
   conversationId: string | null,
-  modelMode: ModelMode,
+  modelName: ChatModelName,
   collectionName: string,
   signal?: AbortSignal,
 ) { // 一次性聊天请求函数
@@ -20,7 +20,7 @@ export function sendChat(
       message,
       user_id: userId,
       conversation_id: conversationId,
-      model_mode: modelMode,
+      ...(modelName ? { model_name: modelName } : {}),
       collection_name: collectionName,
     }), // 携带会话 ID 和当前 collection
     signal, // 允许外部通过 AbortController 取消请求
@@ -31,11 +31,15 @@ export async function sendChatStream(
   message: string, // 用户输入的问题
   userId: string, // 当前会话用户 ID
   conversationId: string | null, // 当前会话 ID，首轮为空时后端会创建
-  modelMode: ModelMode, // 当前回答模型档位
+  modelName: ChatModelName, // 当前显式选择的聊天模型，为空时使用 Prompt 配置
   collectionName: string, // 当前检索的 Qdrant collection
   onChunk: (content: string) => void | Promise<void>, // 每收到一个回答片段时调用的回调
   onConversationId: (conversationId: string) => void, // 收到后端会话 ID 时调用
-  onMetrics?: (metrics: { first_token_ms?: number | null; total_ms?: number | null }) => void, // 收到耗时指标时调用
+  onMetrics?: (metrics: {
+    model_name?: ChatModelName | null
+    first_token_ms?: number | null
+    total_ms?: number | null
+  }) => void, // 收到实际模型和耗时指标时调用
   signal?: AbortSignal, // 可选取消信号，用于停止生成
 ) { // 流式聊天请求函数
   // 流式聊天请求：
@@ -55,7 +59,7 @@ export async function sendChatStream(
       message,
       user_id: userId,
       conversation_id: conversationId,
-      model_mode: modelMode,
+      ...(modelName ? { model_name: modelName } : {}),
       collection_name: collectionName,
     }), // 请求体带上 conversation_id 和当前 collection
     // AbortSignal 用于“停止生成”按钮。
@@ -106,11 +110,16 @@ export async function sendChatStream(
     if (data.conversation_id) { // meta/done 事件会带回会话 ID
       onConversationId(data.conversation_id) // 保存到页面状态，后续请求继续携带
     }
-    if (data.first_token_ms !== undefined || data.total_ms !== undefined) { // metric/done 事件会带耗时
+    if (
+      data.model_name !== undefined
+      || data.first_token_ms !== undefined
+      || data.total_ms !== undefined
+    ) { // meta/metric/done 事件会带实际模型或耗时
       onMetrics?.({
+        model_name: data.model_name ?? null,
         first_token_ms: data.first_token_ms ?? null,
         total_ms: data.total_ms ?? null,
-      }) // 把耗时交给 App.vue 展示
+      }) // 把实际模型和耗时交给页面展示
     }
     if (data.content) { // content 表示一个正常回答片段
       // 必须 await onChunk：

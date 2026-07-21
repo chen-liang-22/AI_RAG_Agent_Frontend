@@ -22,6 +22,7 @@ import {
   answerExamSession,
   deleteExamSession,
   getExamSessionDetail,
+  listDictionaries,
   listExamSections,
   listExamSessions,
   listKnowledgeFiles,
@@ -32,8 +33,8 @@ import {
   type ExamSectionResponse,
   type ExamSessionDetailResponse,
   type ExamSessionSummary,
+  type DictionaryItemResponse,
   type KnowledgeFileResponse,
-  type ModelMode,
 } from '../../../shared/api'
 
 defineProps<{ themeMode: 'dark' | 'light' }>()
@@ -67,14 +68,15 @@ const historyPage = ref(1)
 const historyKeyword = ref('')
 const detailVisible = ref(false)
 const selectedDetail = ref<ExamSessionDetailResponse | null>(null)
+const chatModelItems = ref<DictionaryItemResponse[]>([])
 
-// 考试配置：用户可以指定向量库、文件、一级目录、轮数、模型档位和题型范围。
+// 考试配置：用户可以指定向量库、文件、一级目录、轮数、聊天模型和题型范围。
 const selectedCollectionName = ref('agent')
 const selectedDocumentId = ref('')
 const selectedSectionPath = ref('')
 const userId = ref('exam-user')
 const roundCount = ref(5)
-const modelMode = ref<ModelMode>('high')
+const modelName = ref('')
 const selectedQuestionTypes = ref<ExamQuestionType[]>([
   'single_choice',
   'multiple_choice',
@@ -117,6 +119,18 @@ const questionTypeOptions: Array<{ label: string; value: ExamQuestionType }> = [
   { label: '简答', value: 'short_answer' },
   { label: '填空', value: 'fill_blank' },
 ]
+
+// 读取启用的聊天模型字典项，空选择表示沿用 Prompt 配置。
+async function refreshChatModels() {
+  try {
+    const groups = await listDictionaries('chat_model')
+    chatModelItems.value = (groups.find((group) => group.dictionary_code === 'chat_model')?.items || [])
+      .filter((item) => item.enabled)
+  } catch (error) {
+    chatModelItems.value = []
+    ElMessage.warning(error instanceof Error ? error.message : '聊天模型字典读取失败')
+  }
+}
 
 // 刷新题源文件列表，首次进入页面时默认选中第一个已入库文件。
 async function refreshKnowledgeFiles() {
@@ -234,7 +248,7 @@ async function startExam() {
       user_id: userId.value,
       round_count: roundCount.value,
       question_types: selectedQuestionTypes.value,
-      model_mode: modelMode.value,
+      ...(modelName.value ? { model_name: modelName.value } : {}),
     })
     // 新会话开始后重建聊天窗口，只保留本场考试的消息。
     activeSession.value = response.session
@@ -410,6 +424,7 @@ onMounted(async () => {
   await Promise.all([
     refreshKnowledgeFiles(),
     refreshHistory(),
+    refreshChatModels(),
   ])
 })
 </script>
@@ -464,11 +479,14 @@ onMounted(async () => {
           <el-input-number v-model="roundCount" :min="1" :max="50" />
         </label>
         <label>
-          <span>分析模型</span>
-          <el-select v-model="modelMode">
-            <el-option label="高质量" value="high" />
-            <el-option label="均衡" value="medium" />
-            <el-option label="低延迟" value="low" />
+          <span>聊天模型</span>
+          <el-select v-model="modelName" clearable placeholder="使用 Prompt 配置">
+            <el-option
+              v-for="item in chatModelItems"
+              :key="item.item_code"
+              :label="item.item_name"
+              :value="item.item_code"
+            />
           </el-select>
         </label>
         <label class="question-type-field">

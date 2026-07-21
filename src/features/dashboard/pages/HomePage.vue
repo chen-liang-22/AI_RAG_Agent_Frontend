@@ -984,7 +984,6 @@ async function uploadTrainingKnowledgeFile() { // 上传销售训练资料，后
     trainingKnowledgeUploadResult.value = await uploadTrainingKnowledge({
       file: trainingKnowledgeSelectedFile.value,
       sourceType: 'lms_case',
-      modelMode: 'high',
     })
     trainingKnowledgeActiveBatchId.value = trainingKnowledgeUploadResult.value.batch_id
     await refreshTrainingKnowledgeBatches()
@@ -1081,7 +1080,7 @@ async function reparseTrainingKnowledgeFileBatch(batch: TrainingKnowledgeBatchRe
 
   trainingKnowledgeReparsingBatchId.value = batchId
   try {
-    const result = await reparseTrainingKnowledgeBatch(batchId, true, 'high')
+    const result = await reparseTrainingKnowledgeBatch(batchId, true)
     if (trainingKnowledgeUploadResult.value?.batch_id === batchId) {
       trainingKnowledgeUploadResult.value = {
         ...trainingKnowledgeUploadResult.value,
@@ -2191,10 +2190,14 @@ onMounted(() => {
     >
       <el-form class="dictionary-form" label-position="top">
         <el-form-item label="父级字典编码">
-          <el-input v-model="dictionaryGroupForm.dictionaryCode" :disabled="Boolean(editingDictionaryGroupCode)" placeholder="例如：model_mode" />
+          <el-input
+            v-model="dictionaryGroupForm.dictionaryCode"
+            :disabled="Boolean(editingDictionaryGroupCode)"
+            placeholder="例如：chat_model"
+          />
         </el-form-item>
         <el-form-item label="父级字典名称">
-          <el-input v-model="dictionaryGroupForm.dictionaryName" placeholder="例如：回答模型档位" />
+          <el-input v-model="dictionaryGroupForm.dictionaryName" placeholder="例如：聊天模型" />
         </el-form-item>
       </el-form>
       <template #footer>

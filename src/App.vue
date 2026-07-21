@@ -3,8 +3,18 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, r
 import { ElMessage } from 'element-plus'
 import AppShell from './app/AppShell.vue'
 import LoginGate from './app/LoginGate.vue'
-import { buildPortalMenus, type MainPage, type PortalMenuItem, type ThemeMode } from './app/navigation'
-import { collectAllowedPagesFromPortalMenus, collectAllowedPagesFromSystemMenus, resolveAccessiblePage } from './app/routeGuard'
+import {
+  buildPortalMenus,
+  prepareSystemMenusForUser,
+  type MainPage,
+  type PortalMenuItem,
+  type ThemeMode,
+} from './app/navigation'
+import {
+  collectAllowedPagesFromPortalMenus,
+  collectAllowedPagesFromSystemMenus,
+  resolveAccessiblePage,
+} from './app/routeGuard'
 import {
   clearAccessToken,
   listCurrentUserMenus,
@@ -24,6 +34,7 @@ const ExamPage = defineAsyncComponent(() => import('./features/exam/pages/ExamPa
 const UserManagementPage = defineAsyncComponent(() => import('./features/system/pages/UserManagementPage.vue'))
 const RoleManagementPage = defineAsyncComponent(() => import('./features/system/pages/RoleManagementPage.vue'))
 const MenuManagementPage = defineAsyncComponent(() => import('./features/system/pages/MenuManagementPage.vue'))
+const PromptManagementPage = defineAsyncComponent(() => import('./features/system/pages/PromptManagementPage.vue'))
 
 const themeMode = ref<ThemeMode>(readInitialThemeMode())
 const activePage = ref<MainPage>('home')
@@ -131,12 +142,20 @@ function handleAuthExpired() {
 async function loadPortalMenus() {
   try {
     const menus = await listCurrentUserMenus()
-    portalMenus.value = buildPortalMenus(menus)
-    syncActivePageWithMenus(menus)
+    const preparedMenus = prepareSystemMenusForUser(menus, currentUser.value?.role)
+    portalMenus.value = buildPortalMenus(preparedMenus)
+    syncActivePageWithMenus(preparedMenus)
   } catch (error) {
     portalMenus.value = []
     ElMessage.warning(error instanceof Error ? error.message : '菜单读取失败')
   }
+}
+
+function handlePromptForbidden() {
+  // 提示词接口拒绝访问时离开管理页，避免用户停留在无权限页面。
+  const fallbackPages = new Set(allowedPages.value)
+  fallbackPages.delete('promptManagement')
+  activePage.value = resolveAccessiblePage('home', fallbackPages)
 }
 
 function syncActivePageWithMenus(menus: SystemMenuResponse[]) {
@@ -205,6 +224,11 @@ onBeforeUnmount(() => {
     <UserManagementPage v-else-if="activePage === 'userManagement'" :current-user="currentUser" />
     <RoleManagementPage v-else-if="activePage === 'roleManagement'" />
     <MenuManagementPage v-else-if="activePage === 'menuManagement'" />
+    <PromptManagementPage
+      v-else-if="activePage === 'promptManagement'"
+      :current-user="currentUser"
+      @forbidden="handlePromptForbidden"
+    />
     <div v-else class="page-empty-state">
       <strong>页面不可访问</strong>
       <span>当前页面没有匹配的后端菜单</span>
