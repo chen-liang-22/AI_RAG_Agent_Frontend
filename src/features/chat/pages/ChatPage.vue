@@ -3,8 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue' // ref 创建响
 import {
   Bot, // 机器人图标
   Clock3, // 聊天记录图标
-  Eye, // 文件预览图标
-  FileText, // 文件图标
   MessageCirclePlus, // 继续聊天图标
   LoaderCircle, // 加载中旋转图标
   MessageSquareText, // 会话详情图标
@@ -16,22 +14,15 @@ import {
   Square, // 停止生成图标
   Sun, // 浅色模式图标
   Trash2, // 清空对话图标
-  Upload, // 上传文件图标
 } from 'lucide-vue-next' // lucide 图标库
 import { ElMessage, ElMessageBox } from 'element-plus' // Element Plus 的全局消息提示和确认弹窗
 import {
-  confirmKnowledgeUpload, // 确认上传预览结果并正式入库
   deleteConversation, // 删除后端聊天记录
-  deleteKnowledgeFile, // 删除后端知识库文件
   fetchHealth, // 调用后端健康检查接口
   getConversationDetail, // 查询聊天记录详情
   listConversations, // 分页查询聊天记录
   listDictionaries, // 查询系统字典表
   listKnowledgeFiles, // 查询后端知识库文件列表
-  previewKnowledgeDocument, // 预览已入库知识库文件
-  recommendKnowledgeUpload, // 调用模型推荐上传文件切分方式
-  reindexAllKnowledgeFiles, // 重新索引全部知识库文件
-  reindexKnowledgeFile, // 重新索引后端知识库文件
   sendChat, // 调用一次性聊天接口
   sendChatStream, // 调用流式聊天接口
   type HealthResponse, // 健康检查响应类型
@@ -40,13 +31,9 @@ import {
   type DictionaryGroupResponse, // 字典分组响应类型
   type DictionaryItemResponse, // 字典项响应类型
   type KnowledgeFileResponse, // 知识库文件响应类型
-  type KnowledgeFilePreviewResponse, // 已入库文件预览响应类型
-  type KnowledgeUploadPreviewResponse, // 上传预览响应类型
-  type KnowledgeUploadRecommendResponse, // 模型推荐切分方式响应类型
   type ChatModelName, // 聊天模型名称类型
   type AuthUser, // 当前登录用户类型
 } from '../../../shared/api' // 前端 API 请求封装
-import FilePreviewDialog from '../../../shared/components/FilePreviewDialog.vue' // 站内文件预览弹窗
 
 const props = defineProps<{
   themeMode?: ThemeMode
@@ -106,27 +93,7 @@ function isWelcomeMessage(message?: ChatMessage) { // 判断当前消息是否�
 
 const input = ref('') // 输入框内容
 const loading = ref(false) // 是否正在生成回答
-const reindexingAll = ref(false) // 是否正在重新索引全部知识库文件
-const knowledgeLoading = ref(false) // 是否正在刷新知识库文件列表
-const uploadingKnowledge = ref(false) // 是否正在上传知识库文件
-const confirmingKnowledge = ref(false) // 是否正在确认入库
-const activeKnowledgeAction = ref('') // 当前正在执行的文件操作，用于控制单行按钮 loading
-const knowledgeFiles = ref<KnowledgeFileResponse[]>([]) // 后端返回的知识库文件列表
-const knowledgeKeyword = ref('') // 知识库文件名模糊查询关键词
-const knowledgeFileInput = ref<HTMLInputElement | null>(null) // 隐藏的文件选择框，用于触发本地文件选择
-const knowledgeDialogVisible = ref(false) // 知识库弹窗是否可见
-const activeKnowledgeCollection = ref('') // 知识库管理弹窗当前选中的知识库 tab；为空时等待列表刷新后自动选中第一个
-const knowledgePage = ref(1) // 知识库弹窗当前页码
-const knowledgePageSize = 9 // 知识库弹窗每页 9 个文件
-const uploadPreviewVisible = ref(false) // 上传预览弹窗是否可见
-const uploadPreview = ref<KnowledgeUploadPreviewResponse | null>(null) // 当前上传文件的预解析结果
-const uploadRecommendation = ref<KnowledgeUploadRecommendResponse | null>(null) // 当前上传文件的模型推荐结果
-const recommendingKnowledge = ref(false) // 是否正在调用模型推荐切分方式
-const knowledgePreviewVisible = ref(false) // 已入库文件预览弹窗是否可见
-const knowledgePreviewLoading = ref(false) // 是否正在加载已入库文件预览内容
-const knowledgePreview = ref<KnowledgeFilePreviewResponse | null>(null) // 当前正在预览的知识库文件内容
-const selectedDocumentType = ref('') // 用户确认后的文档结构类型，默认值由 document_structure 字典提供
-const selectedSplitStrategy = ref('') // 用户确认后的切分策略，默认值由 split_strategy 字典提供
+const knowledgeFiles = ref<KnowledgeFileResponse[]>([]) // 聊天 collection 下拉使用的只读知识库文件列表
 const conversationDialogVisible = ref(false) // 聊天记录弹窗是否可见
 const conversationLoading = ref(false) // 聊天记录列表是否加载中
 const conversationDetailLoading = ref(false) // 聊天记录详情是否加载中
@@ -148,7 +115,6 @@ const themeToggleIcon = computed(() => (themeMode.value === 'dark' ? Sun : Moon)
 const outputMode = ref<OutputMode>('') // 输出模式，默认值由 output_mode 字典提供
 const modelName = ref<ChatModelName>('') // 显式选择的聊天模型；为空时由 Prompt 配置决定
 const selectedCollectionName = ref('agent') // 当前聊天检索使用的 Qdrant collection
-const selectedUploadCollection = ref('agent') // 当前上传文件将写入的 Qdrant collection
 
 // userId 会随每次请求传给后端。
 // 已登录时优先使用后端登录用户 ID；没有登录用户时才用随机 ID 做开发兜底。
@@ -217,14 +183,6 @@ watch(userDisplayName, () => { // 登录用户名称加载、变化或热更新�
   syncWelcomeMessageDisplayName()
 }, { immediate: true })
 
-watch(knowledgeKeyword, () => { // 知识库名称搜索变化时回到第一页
-  knowledgePage.value = 1
-})
-
-watch(activeKnowledgeCollection, () => { // 切换知识库 tab 时回到第一页
-  knowledgePage.value = 1
-})
-
 watch(conversationKeyword, () => { // 聊天记录名称搜索变化时重新查询第一页
   conversationPage.value = 1
   selectedConversation.value = null
@@ -233,25 +191,6 @@ watch(conversationKeyword, () => { // 聊天记录名称搜索变化时重新查
   }
 })
 
-const knowledgeFilesInActiveCollection = computed(() => { // 先按当前知识库 tab 过滤文件
-  if (!activeKnowledgeCollection.value) return knowledgeFiles.value
-  return knowledgeFiles.value.filter((file) => file.collection_name === activeKnowledgeCollection.value)
-})
-
-const filteredKnowledgeFiles = computed(() => { // 在当前知识库 tab 内按文件名模糊过滤文件
-  const keyword = knowledgeKeyword.value.trim().toLowerCase()
-  if (!keyword) return knowledgeFilesInActiveCollection.value
-  return knowledgeFilesInActiveCollection.value.filter((file) => file.filename.toLowerCase().includes(keyword))
-})
-
-const pagedKnowledgeFiles = computed(() => { // 当前知识库页展示的 9 个文件
-  const start = (knowledgePage.value - 1) * knowledgePageSize // 计算当前页起始下标
-  return filteredKnowledgeFiles.value.slice(start, start + knowledgePageSize) // 返回当前页文件
-})
-
-const activeIndexedKnowledgeCount = computed(() => ( // 当前知识库 tab 内已索引文件数
-  knowledgeFilesInActiveCollection.value.filter((file) => file.status === 'indexed').length
-))
 const collectionOptions = computed(() => { // 汇总健康检查和文件列表中的 collection，供下拉选择
   const names = new Set<string>([health.value?.collection_name || 'agent'])
   for (const collectionName of health.value?.collections || []) {
@@ -262,27 +201,6 @@ const collectionOptions = computed(() => { // 汇总健康检查和文件列表�
   }
   return Array.from(names).sort((left, right) => left.localeCompare(right))
 })
-
-const knowledgeCollectionTabs = computed(() => ( // 知识库管理弹窗的 collection tab，附带每个知识库的文件统计
-  collectionOptions.value.map((collectionName) => {
-    const files = knowledgeFiles.value.filter((file) => file.collection_name === collectionName)
-    return {
-      collectionName,
-      total: files.length,
-      indexed: files.filter((file) => file.status === 'indexed').length,
-    }
-  })
-))
-
-watch(collectionOptions, (collections) => { // 刷新列表后保证弹窗始终选中一个存在的知识库 tab
-  if (!collections.length) {
-    activeKnowledgeCollection.value = ''
-    return
-  }
-  if (!activeKnowledgeCollection.value || !collections.includes(activeKnowledgeCollection.value)) {
-    activeKnowledgeCollection.value = collections[0]
-  }
-}, { immediate: true })
 
 function flattenDictionaryItems(items: DictionaryItemResponse[]): DictionaryItemResponse[] { // 把多层级字典项拉平成列表，便于下拉控件使用
   return items.flatMap((item) => [item, ...flattenDictionaryItems(item.children || [])])
@@ -344,11 +262,6 @@ function isOutputModeKind(kind: string) { // 判断当前输出模式是否属�
   return outputMode.value === dictionaryCodeByMetadata('output_mode', 'mode_kind', kind)
 }
 
-function isKnowledgeResultStatus(status: string, metadataKey: string, metadataValue: unknown) { // 按字典 metadata 判断知识库操作结果
-  const targetCode = dictionaryCodeByMetadata('knowledge_result_status', metadataKey, metadataValue)
-  return Boolean(targetCode) && status === targetCode
-}
-
 async function scrollToBottom() { // 滚动聊天列表到底部
   // nextTick 等待 Vue 把刚刚追加的消息或 chunk 渲染到 DOM。
   // 如果不等 DOM 更新就滚动，scrollHeight 可能还是旧值。
@@ -383,25 +296,12 @@ async function refreshDictionaries() { // 刷新系统字典表
   try {
     dictionaryGroups.value = await listDictionaries() // 从后端读取全部字典分组
     clearUnavailableChatModel() // 请求成功后再校验，避免字典初次加载前误清空用户选择
-    selectedDocumentType.value ||= dictionaryDefaultCode('document_structure') // 上传文档结构默认取字典第一项
-    selectedSplitStrategy.value ||= dictionaryDefaultCode('split_strategy') // 上传切分策略默认取字典第一项
     outputMode.value ||= dictionaryDefaultCode('output_mode') // 输出模式默认取字典第一项
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '字典表加载失败') // 展示字典加载错误
   } finally {
     dictionaryLoading.value = false // 关闭字典加载状态
   }
-}
-
-function knowledgeStatusType(status: string) { // 把后端状态映射成 Element Plus tag 样式
-  const item = dictionaryItems('document_status').find((option) => option.item_code === status)
-  return String(item?.metadata?.tag_type || 'info') // 颜色配置来自字典 metadata
-}
-
-function formatFileSize(size: number) { // 把字节数格式化成更易读的大小
-  if (size < 1024) return `${size} B` // 小于 1KB 直接显示字节
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB` // 小于 1MB 显示 KB
-  return `${(size / 1024 / 1024).toFixed(1)} MB` // 其它显示 MB
 }
 
 function formatDateTime(value: string) { // 格式化后端返回的 ISO 时间字符串
@@ -414,24 +314,15 @@ function formatDuration(value?: number | null) { // 把毫秒耗时格式化成�
   return `${(value / 1000).toFixed(2)}s`
 }
 
-function knowledgeActionKey(action: string, documentId: string) { // 拼接文件操作唯一 key
-  return `${action}:${documentId}` // 用于判断当前行哪个按钮正在 loading
-}
-
 function conversationActionKey(action: string, conversationIdValue: string) { // 拼接会话操作唯一 key
   return `${action}:${conversationIdValue}` // 用于判断当前行哪个按钮正在 loading
 }
 
-async function refreshKnowledgeFiles() { // 刷新知识库文件列表
-  knowledgeLoading.value = true // 打开列表 loading
+async function refreshKnowledgeFiles() { // 读取文件所属 collection，供聊天检索下拉选择
   try {
-    knowledgeFiles.value = await listKnowledgeFiles() // 调用后端文件列表接口
-    const maxPage = Math.max(1, Math.ceil(filteredKnowledgeFiles.value.length / knowledgePageSize)) // 计算最大页码
-    knowledgePage.value = Math.min(knowledgePage.value, maxPage) // 删除文件后避免停留在空页
+    knowledgeFiles.value = await listKnowledgeFiles() // 仅保留通用知识库文件的 collection 信息
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '知识库文件列表加载失败') // 展示错误
-  } finally {
-    knowledgeLoading.value = false // 关闭列表 loading
+    ElMessage.error(error instanceof Error ? error.message : '聊天知识库列表加载失败') // 展示错误
   }
 }
 
@@ -479,10 +370,6 @@ async function handleConversationPageChange(page: number) { // 聊天记录翻�
   conversationPage.value = page // 更新页码
   selectedConversation.value = null // 翻页后清空右侧详情
   await refreshConversations() // 重新加载列表
-}
-
-async function handleKnowledgePageChange(page: number) { // 知识库文件翻页
-  knowledgePage.value = page // 更新知识库页码
 }
 
 async function openConversationDetail(conversation: ConversationSummaryResponse) { // 查看聊天记录详情
@@ -564,151 +451,8 @@ async function continueConversation() { // 从聊天记录继续当前会话
   await scrollToBottom() // 滚动到历史会话最新位置
 }
 
-function openKnowledgeFilePicker() { // 打开本地文件选择框
-  knowledgeFileInput.value?.click() // 触发隐藏 input 的 click
-}
-
-async function handleRecommendKnowledgeUpload() { // 调用模型推荐当前上传文件的切分方式
-  if (!uploadPreview.value || recommendingKnowledge.value) return // 没有预览文件或正在推荐时直接退出
-
-  recommendingKnowledge.value = true // 打开模型推荐 loading
-  try {
-    const recommendation = await recommendKnowledgeUpload(uploadPreview.value.upload_id) // 调用后端模型推荐接口
-    uploadRecommendation.value = recommendation // 保存推荐结果用于页面展示
-    selectedDocumentType.value = recommendation.document_type // 自动采用模型推荐文档类型
-    selectedSplitStrategy.value = recommendation.split_strategy // 自动采用模型推荐切分策略
-    ElMessage.success('已采用模型推荐的切分方式') // 提示用户推荐已应用
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '模型推荐失败') // 展示错误
-  } finally {
-    recommendingKnowledge.value = false // 关闭模型推荐 loading
-  }
-}
-
-async function handleConfirmKnowledgeUpload() { // 用户确认预览后正式入库
-  if (!uploadPreview.value || confirmingKnowledge.value) return // 没有预览数据或正在入库时直接退出
-
-  confirmingKnowledge.value = true // 打开确认入库 loading
-  try {
-    const response = await confirmKnowledgeUpload(
-      uploadPreview.value.upload_id,
-      selectedDocumentType.value,
-      selectedSplitStrategy.value,
-      selectedUploadCollection.value,
-    ) // 调用后端确认入库接口
-    if (isKnowledgeResultStatus(response.status, 'result_kind', 'duplicate')) { // 确认阶段再次发现重复
-      ElMessage.info(response.message || '相同内容的文件已经存在') // 展示重复提示
-    } else {
-      ElMessage.success(response.message || '文件已保存，正在后台入库') // 展示成功提示
-    }
-    uploadPreviewVisible.value = false // 关闭弹窗
-    uploadPreview.value = null // 清空预览状态
-    uploadRecommendation.value = null // 清空模型推荐状态
-    await refreshKnowledgeFiles() // 刷新文件列表
-    await refreshHealth() // 刷新 Qdrant 状态
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '文件入库失败') // 展示错误
-  } finally {
-    confirmingKnowledge.value = false // 关闭 loading
-  }
-}
-
 function messageRoleLabel(role: string) { // 把消息角色编码转成页面展示文本
   return dictionaryItems('message_role').find((item) => item.item_code === role)?.item_name || role
-}
-
-async function handlePreviewKnowledgeFile(file: KnowledgeFileResponse) { // 预览已入库知识库文件
-  const actionKey = knowledgeActionKey('preview', file.document_id) // 当前行预览按钮的 loading key
-  knowledgePreviewVisible.value = true // 在当前页面打开弹窗，不离开系统
-  knowledgePreviewLoading.value = true // 打开预览 loading
-  knowledgePreview.value = null // 清空上一次预览，避免短暂显示旧文件
-  activeKnowledgeAction.value = actionKey // 标记当前行正在预览
-
-  try {
-    knowledgePreview.value = await previewKnowledgeDocument(file.document_id) // 后端返回解码文本或 MinIO HTTP 地址
-  } catch (error) {
-    knowledgePreviewVisible.value = false // 加载失败时关闭空弹窗
-    ElMessage.error(error instanceof Error ? error.message : '文件预览失败') // 展示后端错误
-  } finally {
-    knowledgePreviewLoading.value = false // 关闭预览 loading
-    if (activeKnowledgeAction.value === actionKey) {
-      activeKnowledgeAction.value = '' // 只清理本次预览设置的 loading 状态
-    }
-  }
-}
-
-async function handleReindexKnowledgeFile(file: KnowledgeFileResponse) { // 重新索引单个知识库文件
-  try {
-    await ElMessageBox.confirm( // 重建索引会调用 embedding 和 Qdrant，先让用户确认
-      `确定重新索引「${file.filename}」吗？`,
-      '重新索引',
-      {
-        confirmButtonText: '重新索引',
-        cancelButtonText: '取消',
-        type: 'warning',
-      },
-    )
-  } catch {
-    return // 用户取消确认时退出
-  }
-
-  activeKnowledgeAction.value = knowledgeActionKey('reindex', file.document_id) // 标记当前行重建中
-  try {
-    await reindexKnowledgeFile(file.document_id) // 调用后端重建索引接口
-    ElMessage.success('已重新索引') // 成功提示
-    await refreshKnowledgeFiles() // 刷新列表中的 version/chunk_count/status
-    await refreshHealth() // 刷新健康状态
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '重新索引失败') // 展示错误
-  } finally {
-    activeKnowledgeAction.value = '' // 清空当前操作状态
-  }
-}
-
-async function handleReindexAllKnowledgeFiles() { // 清空 Qdrant collection 并重新索引全部知识库文件
-  const confirmed = await confirmDangerOnce(
-    '确定清空旧向量并重新索引全部知识库文件吗？这个操作会重新生成向量，文件多时会比较慢。',
-    '清空并重建',
-    '清空并重建',
-  )
-  if (!confirmed) return // 用户取消确认时退出
-
-  reindexingAll.value = true // 打开批量重建 loading
-  try {
-    const response = await reindexAllKnowledgeFiles() // 调用后端清空 collection 并批量重建接口
-    if (response.failed > 0) { // 有部分文件失败
-      ElMessage.warning(`重建完成：成功 ${response.succeeded} 个，失败 ${response.failed} 个`) // 展示部分失败
-    } else {
-      ElMessage.success(`全部重建完成：${response.succeeded} 个文件`) // 展示成功
-    }
-    await refreshKnowledgeFiles() // 刷新列表中的 chunk_count/version/status
-    await refreshHealth() // 刷新健康状态
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '清空并重建失败') // 展示错误
-  } finally {
-    reindexingAll.value = false // 关闭 loading
-  }
-}
-
-async function handleDeleteKnowledgeFile(file: KnowledgeFileResponse) { // 删除单个知识库文件
-  const confirmed = await confirmDangerOnce(
-    `确定删除「${file.filename}」吗？`,
-    '删除知识库文件',
-    '删除',
-  )
-  if (!confirmed) return // 用户取消确认时退出
-
-  activeKnowledgeAction.value = knowledgeActionKey('delete', file.document_id) // 标记当前行删除中
-  try {
-    await deleteKnowledgeFile(file.document_id) // 调用后端删除接口
-    ElMessage.success('已删除知识库文件') // 成功提示
-    await refreshKnowledgeFiles() // 删除后刷新列表
-    await refreshHealth() // 删除后刷新健康状态
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '删除失败') // 展示错误
-  } finally {
-    activeKnowledgeAction.value = '' // 清空当前操作状态
-  }
 }
 
 function resetAbortController() { // 为新请求创建取消控制器
@@ -861,8 +605,8 @@ function askPreset(question: string) { // 点击快捷问题时执行
 onMounted(() => { // Vue 组件挂载完成后执行
   // 页面打开后立即检查后端和 Qdrant 状态，用于左侧状态栏展示。
   void refreshHealth() // 页面打开后主动刷新一次服务状态
-  void refreshKnowledgeFiles() // 页面打开后同步加载知识库文件列表
-  void refreshDictionaries() // 页面打开后加载字典表，供下拉和字典页复用
+  void refreshKnowledgeFiles() // 页面打开后读取聊天可选的 collection
+  void refreshDictionaries() // 页面打开后加载聊天模型、输出模式和消息角色字典
 })
 </script>
 
@@ -1081,141 +825,6 @@ onMounted(() => { // Vue 组件挂载完成后执行
     </section>
 
     <el-dialog
-      v-model="knowledgeDialogVisible"
-      :class="['knowledge-dialog', `theme-${themeMode}`]"
-      title="知识库管理"
-      width="1180px"
-    >
-      <div class="dialog-toolbar">
-        <div class="dialog-toolbar-main">
-          <div>
-            <strong>{{ filteredKnowledgeFiles.length }}</strong>
-            <span>个文件</span>
-            <em>{{ activeIndexedKnowledgeCount }} 个已索引</em>
-          </div>
-          <el-input
-            v-model="knowledgeKeyword"
-            class="dialog-search-input"
-            clearable
-            :prefix-icon="Search"
-            placeholder="按文件名模糊查询"
-          />
-        </div>
-        <div class="dialog-actions">
-          <el-button :icon="Upload" :loading="uploadingKnowledge" type="primary" @click="openKnowledgeFilePicker">
-            上传文件
-          </el-button>
-          <el-button :icon="RefreshCw" :loading="knowledgeLoading" @click="refreshKnowledgeFiles">
-            刷新
-          </el-button>
-          <el-button
-            :icon="RefreshCw"
-            :loading="reindexingAll"
-            type="warning"
-            plain
-            @click="handleReindexAllKnowledgeFiles"
-          >
-            清空并重建
-          </el-button>
-        </div>
-      </div>
-
-      <div class="knowledge-collection-tabs" role="tablist" aria-label="知识库列表">
-        <button
-          v-for="tab in knowledgeCollectionTabs"
-          :key="tab.collectionName"
-          type="button"
-          class="knowledge-collection-tab"
-          :class="{ active: activeKnowledgeCollection === tab.collectionName }"
-          role="tab"
-          :aria-selected="activeKnowledgeCollection === tab.collectionName"
-          @click="activeKnowledgeCollection = tab.collectionName"
-        >
-          <span>{{ tab.collectionName }}</span>
-          <em>{{ tab.indexed }}/{{ tab.total }} 已索引</em>
-        </button>
-      </div>
-
-      <div v-loading="knowledgeLoading" class="knowledge-dialog-body">
-        <div v-if="knowledgeFiles.length === 0" class="empty-knowledge">
-          暂无知识库文件
-        </div>
-        <div v-else-if="filteredKnowledgeFiles.length === 0" class="empty-knowledge">
-          没有匹配的知识库文件
-        </div>
-        <div v-else class="knowledge-grid">
-          <article
-            v-for="file in pagedKnowledgeFiles"
-            :key="file.document_id"
-            class="knowledge-file"
-          >
-            <div class="knowledge-file-main">
-              <FileText :size="18" />
-              <div class="knowledge-file-info">
-                <strong>{{ file.filename }}</strong>
-                <span>
-                  {{ file.file_type.toUpperCase() }} · {{ formatFileSize(file.file_size) }} · {{ file.chunk_count }} chunks
-                </span>
-              </div>
-              <el-tag :type="knowledgeStatusType(file.status)" effect="plain" size="small">
-                {{ file.status }}
-              </el-tag>
-            </div>
-            <div class="knowledge-file-meta">
-              <span>版本 v{{ file.version }}</span>
-              <span>{{ formatDateTime(file.updated_at) }}</span>
-            </div>
-            <div v-if="file.error_message" class="knowledge-error">
-              {{ file.error_message }}
-            </div>
-            <div class="knowledge-file-actions">
-              <el-button
-                :icon="Eye"
-                size="small"
-                :loading="activeKnowledgeAction === knowledgeActionKey('preview', file.document_id)"
-                :disabled="Boolean(activeKnowledgeAction)"
-                @click="handlePreviewKnowledgeFile(file)"
-              >
-                预览
-              </el-button>
-              <el-button
-                :icon="RefreshCw"
-                size="small"
-                :loading="activeKnowledgeAction === knowledgeActionKey('reindex', file.document_id)"
-                :disabled="Boolean(activeKnowledgeAction)"
-                @click="handleReindexKnowledgeFile(file)"
-              >
-                重建
-              </el-button>
-              <el-button
-                :icon="Trash2"
-                plain
-                size="small"
-                type="danger"
-                :loading="activeKnowledgeAction === knowledgeActionKey('delete', file.document_id)"
-                :disabled="Boolean(activeKnowledgeAction)"
-                @click="handleDeleteKnowledgeFile(file)"
-              >
-                删除
-              </el-button>
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <template #footer>
-        <el-pagination
-          v-model:current-page="knowledgePage"
-          background
-          layout="prev, pager, next"
-          :page-size="knowledgePageSize"
-          :total="filteredKnowledgeFiles.length"
-          @current-change="handleKnowledgePageChange"
-        />
-      </template>
-    </el-dialog>
-
-    <el-dialog
       v-model="conversationDialogVisible"
       :class="['conversation-dialog', `theme-${themeMode}`]"
       title="聊天记录"
@@ -1328,133 +937,6 @@ onMounted(() => { // Vue 组件挂载完成后执行
       </div>
     </el-dialog>
 
-    <FilePreviewDialog
-      v-model="knowledgePreviewVisible"
-      :loading="knowledgePreviewLoading"
-      :theme-mode="themeMode"
-      title="文件预览"
-      :preview="knowledgePreview
-        ? {
-          file: {
-            filename: knowledgePreview.document.filename,
-            file_type: knowledgePreview.document.file_type,
-            file_size: knowledgePreview.document.file_size,
-          },
-          preview_type: knowledgePreview.preview_type,
-          content: knowledgePreview.content,
-          truncated: knowledgePreview.truncated,
-          file_url: knowledgePreview.file_url,
-          charset: knowledgePreview.charset,
-        }
-        : null"
-    />
-
-    <el-dialog
-      v-model="uploadPreviewVisible"
-      :class="['upload-preview-dialog', `theme-${themeMode}`]"
-      title="确认入库配置"
-      width="640px"
-    >
-      <div v-if="uploadPreview" class="upload-preview">
-        <div class="preview-summary">
-          <div>
-            <span>文件</span>
-            <strong>{{ uploadPreview.filename }}</strong>
-          </div>
-          <div>
-            <span>大小</span>
-            <strong>{{ formatFileSize(uploadPreview.file_size) }}</strong>
-          </div>
-          <div>
-            <span>推荐来源</span>
-            <strong>{{ uploadRecommendation ? '模型' : '默认' }}</strong>
-          </div>
-        </div>
-
-        <div class="recommend-toolbar">
-          <div>
-            <strong>{{ uploadRecommendation ? `模型置信度 ${Math.round(uploadRecommendation.confidence * 100)}%` : '默认使用通用递归切分' }}</strong>
-            <span v-if="uploadRecommendation">
-              {{ uploadRecommendation.model_name }} · {{ uploadRecommendation.sample_chars }} 字符样本
-            </span>
-            <span v-else>需要更精细切分时，可以让模型读取结构样本后推荐。</span>
-          </div>
-          <el-button
-            :icon="Bot"
-            :loading="recommendingKnowledge"
-            :disabled="confirmingKnowledge"
-            type="primary"
-            plain
-            @click="handleRecommendKnowledgeUpload"
-          >
-            模型推荐
-          </el-button>
-        </div>
-
-        <div class="preview-form">
-          <label>
-            <span>Collection</span>
-            <el-select
-              v-model="selectedUploadCollection"
-              filterable
-              allow-create
-              default-first-option
-              placeholder="选择或输入 Collection"
-            >
-              <el-option
-                v-for="collectionName in collectionOptions"
-                :key="collectionName"
-                :label="collectionName"
-                :value="collectionName"
-              />
-            </el-select>
-          </label>
-          <label>
-            <span>文档结构</span>
-            <el-select v-model="selectedDocumentType" placeholder="选择文档结构">
-              <el-option
-                v-for="item in dictionaryItems('document_structure')"
-                :key="item.item_code"
-                :label="item.item_name"
-                :value="item.item_code"
-              />
-            </el-select>
-          </label>
-          <label>
-            <span>切分策略</span>
-            <el-select v-model="selectedSplitStrategy" placeholder="选择切分策略">
-              <el-option
-                v-for="item in dictionaryItems('split_strategy')"
-                :key="item.item_code"
-                :label="item.item_name"
-                :value="item.item_code"
-              />
-            </el-select>
-          </label>
-        </div>
-
-        <div class="preview-reasons">
-          <span>{{ uploadRecommendation ? '模型推荐原因' : '默认原因' }}</span>
-          <p v-for="reason in (uploadRecommendation?.reasons || uploadPreview.reasons)" :key="reason">
-            {{ reason }}
-          </p>
-        </div>
-
-        <div class="preview-sample">
-          <span>文本预览</span>
-          <pre>{{ uploadPreview.sample_text }}</pre>
-        </div>
-      </div>
-
-      <template #footer>
-        <el-button :disabled="confirmingKnowledge" @click="uploadPreviewVisible = false">
-          取消
-        </el-button>
-        <el-button type="primary" :loading="confirmingKnowledge" @click="handleConfirmKnowledgeUpload">
-          确认入库
-        </el-button>
-      </template>
-    </el-dialog>
   </main>
 </template>
 

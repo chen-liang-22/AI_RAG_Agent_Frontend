@@ -12,6 +12,7 @@ if (packageSource.includes('vue-router') || appSource.includes('vue-router')) {
 }
 
 const requiredNavigationFragments = [
+  "| 'knowledgeManagement'",
   "| 'dictionaryManagement'",
   'BookKey',
   'routePath',
@@ -28,6 +29,8 @@ for (const fragment of requiredNavigationFragments) {
 }
 
 const requiredAppFragments = [
+  "import('./features/knowledge/pages/KnowledgeManagementPage.vue')",
+  "activePage === 'knowledgeManagement'",
   "import('./features/system/pages/DictionaryManagementPage.vue')",
   "activePage === 'dictionaryManagement'",
   '@forbidden="handleDictionaryForbidden"',

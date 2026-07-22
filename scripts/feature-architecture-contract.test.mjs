@@ -6,6 +6,7 @@ const root = process.cwd()
 const requiredFiles = [
   'src/features/dashboard/pages/HomePage.vue',
   'src/features/chat/pages/ChatPage.vue',
+  'src/features/knowledge/pages/KnowledgeManagementPage.vue',
   'src/features/sales-training/pages/SalesTrainingPage.vue',
   'src/features/exam/pages/ExamPage.vue',
   'src/features/sales-training/components/TrainingKnowledgeUploadPanel.vue',
@@ -53,6 +54,7 @@ const appSource = readFileSync(join(root, 'src/App.vue'), 'utf8')
 const appImports = [
   "import('./features/dashboard/pages/HomePage.vue')",
   "import('./features/chat/pages/ChatPage.vue')",
+  "import('./features/knowledge/pages/KnowledgeManagementPage.vue')",
   "import('./features/sales-training/pages/SalesTrainingPage.vue')",
   "import('./features/exam/pages/ExamPage.vue')",
 ]

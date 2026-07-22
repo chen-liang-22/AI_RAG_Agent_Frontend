@@ -36,6 +36,9 @@ import {
 
 const HomePage = defineAsyncComponent(() => import('./features/dashboard/pages/HomePage.vue'))
 const ChatPage = defineAsyncComponent(() => import('./features/chat/pages/ChatPage.vue'))
+const KnowledgeManagementPage = defineAsyncComponent(
+  () => import('./features/knowledge/pages/KnowledgeManagementPage.vue'),
+)
 const SalesTrainingPage = defineAsyncComponent(() => import('./features/sales-training/pages/SalesTrainingPage.vue'))
 const KnowledgeGraphPage = defineAsyncComponent(() => import('./features/knowledge-graph/pages/KnowledgeGraphPage.vue'))
 const ExamPage = defineAsyncComponent(() => import('./features/exam/pages/ExamPage.vue'))
@@ -331,6 +334,10 @@ onBeforeUnmount(() => {
       v-else-if="activePage === 'chat'"
       :theme-mode="themeMode"
       :current-user="currentUser"
+    />
+    <KnowledgeManagementPage
+      v-else-if="activePage === 'knowledgeManagement'"
+      :theme-mode="themeMode"
     />
     <SalesTrainingPage v-else-if="activePage === 'salesTraining'" :theme-mode="themeMode" />
     <KnowledgeGraphPage v-else-if="activePage === 'knowledgeGraph'" :theme-mode="themeMode" />

@@ -5,6 +5,7 @@ const root = process.cwd()
 const featureEntries = [
   'src/features/dashboard/pages/HomePage.vue',
   'src/features/chat/pages/ChatPage.vue',
+  'src/features/knowledge/pages/KnowledgeManagementPage.vue',
   'src/features/sales-training/pages/SalesTrainingPage.vue',
   'src/features/exam/pages/ExamPage.vue',
   'src/features/system/pages/UserManagementPage.vue',

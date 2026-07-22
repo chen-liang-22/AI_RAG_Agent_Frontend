@@ -6,6 +6,7 @@ const requiredFragments = [
   'defineAsyncComponent',
   "import('./features/dashboard/pages/HomePage.vue')",
   "import('./features/chat/pages/ChatPage.vue')",
+  "import('./features/knowledge/pages/KnowledgeManagementPage.vue')",
   "import('./features/sales-training/pages/SalesTrainingPage.vue')",
   "import('./features/exam/pages/ExamPage.vue')",
   "import('./features/system/pages/UserManagementPage.vue')",

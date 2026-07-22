@@ -18,6 +18,7 @@ export type ThemeMode = 'dark' | 'light'
 export type MainPage =
   | 'home'
   | 'chat'
+  | 'knowledgeManagement'
   | 'exam'
   | 'salesTraining'
   | 'knowledgeGraph'
@@ -56,6 +57,7 @@ export function isMainPage(value: string | null | undefined): value is MainPage 
   return [
     'home',
     'chat',
+    'knowledgeManagement',
     'exam',
     'salesTraining',
     'knowledgeGraph',
