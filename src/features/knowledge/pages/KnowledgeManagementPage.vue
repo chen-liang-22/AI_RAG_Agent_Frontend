@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   Bot,
   BookKey,
+  BrainCircuit,
   Eye,
   FileText,
   RefreshCw,
@@ -42,6 +43,17 @@ const props = defineProps<{
   themeMode: 'dark' | 'light'
 }>()
 
+const emit = defineEmits<{
+  openSalesTrainingKnowledge: []
+}>()
+
+const SALES_TRAINING_COLLECTION = 'sales_training_cases'
+
+// 销售训练入库过程使用的技术临时 collection 不得在正式知识库中展示或写入。
+const RESERVED_KNOWLEDGE_COLLECTIONS = new Set([
+  'sales_training_cases_staging',
+])
+
 const knowledgeFiles = ref<KnowledgeFileResponse[]>([])
 const health = ref<HealthResponse | null>(null)
 const dictionaryGroups = ref<DictionaryGroupResponse[]>([])
@@ -59,6 +71,7 @@ const activeKnowledgeCollection = ref('')
 const knowledgePage = ref(1)
 const knowledgePageSize = 9
 const knowledgeFileInput = ref<HTMLInputElement | null>(null)
+const uploadTypeDialogVisible = ref(false)
 const uploadPreviewVisible = ref(false)
 const uploadPreview = ref<KnowledgeUploadPreviewResponse | null>(null)
 const uploadRecommendation = ref<KnowledgeUploadRecommendResponse | null>(null)
@@ -69,7 +82,15 @@ const knowledgePreviewVisible = ref(false)
 const knowledgePreviewLoading = ref(false)
 const knowledgePreview = ref<KnowledgeFilePreviewResponse | null>(null)
 
-// 汇总健康检查和已入库文件中的 collection，作为列表页签和上传目标选项。
+function isReservedKnowledgeCollection(collectionName: string): boolean { // 判断是否为知识库技术临时 collection
+  return RESERVED_KNOWLEDGE_COLLECTIONS.has(collectionName.trim())
+}
+
+function isSalesTrainingCollection(collectionName: string): boolean { // 判断是否为销售训练正式 collection
+  return collectionName.trim() === SALES_TRAINING_COLLECTION
+}
+
+// 汇总健康检查和已入库文件中的正式 collection，作为全局列表页签。
 const collectionOptions = computed(() => {
   const names = new Set<string>([health.value?.collection_name || 'agent'])
   for (const collectionName of health.value?.collections || []) {
@@ -78,8 +99,15 @@ const collectionOptions = computed(() => {
   for (const file of knowledgeFiles.value) {
     if (file.collection_name) names.add(file.collection_name)
   }
-  return Array.from(names).sort((left, right) => left.localeCompare(right))
+  return Array.from(names)
+    .filter((collectionName) => !isReservedKnowledgeCollection(collectionName))
+    .sort((left, right) => left.localeCompare(right))
 })
+
+// 通用上传不得选择销售训练正式库，该库只能通过销售训练批次流程发布。
+const generalUploadCollectionOptions = computed(() => (
+  collectionOptions.value.filter((collectionName) => !isSalesTrainingCollection(collectionName))
+))
 
 // 为每个 collection 计算文件总数和已索引数，供页签展示真实状态。
 const knowledgeCollectionTabs = computed(() => (
@@ -240,11 +268,12 @@ async function refreshUploadOptions(): Promise<void> { // 读取后端实际支�
   }
 }
 
-async function refreshKnowledgeFiles(): Promise<void> { // 刷新全部通用知识库文件并修正当前页码
+async function refreshKnowledgeFiles(): Promise<void> { // 刷新全部正式知识库文件并修正当前页码
   knowledgeLoading.value = true
   knowledgeError.value = ''
   try {
-    knowledgeFiles.value = await listKnowledgeFiles()
+    const files = await listKnowledgeFiles(true)
+    knowledgeFiles.value = files.filter((file) => !isReservedKnowledgeCollection(file.collection_name))
     const maxPage = Math.max(1, Math.ceil(filteredKnowledgeFiles.value.length / knowledgePageSize))
     knowledgePage.value = Math.min(knowledgePage.value, maxPage)
   } catch (error) {
@@ -255,8 +284,18 @@ async function refreshKnowledgeFiles(): Promise<void> { // 刷新全部通用知
   }
 }
 
-function openKnowledgeFilePicker(): void { // 触发隐藏的原生文件选择框
+function openKnowledgeUploadTypeDialog(): void { // 打开资料类型选择弹窗
+  uploadTypeDialogVisible.value = true
+}
+
+function openKnowledgeFilePicker(): void { // 选择通用知识并触发原生文件选择框
+  uploadTypeDialogVisible.value = false
   knowledgeFileInput.value?.click()
+}
+
+function openSalesTrainingKnowledgeUpload(): void { // 进入销售训练既有资料管理流程
+  uploadTypeDialogVisible.value = false
+  emit('openSalesTrainingKnowledge')
 }
 
 async function handleKnowledgeFileChange(event: Event): Promise<void> { // 上传用户选中的单个文件并打开预解析确认弹窗
@@ -281,7 +320,9 @@ async function handleKnowledgeFileChange(event: Event): Promise<void> { // 上�
     uploadRecommendation.value = null
     selectedDocumentType.value = response.detected_type || dictionaryDefaultCode('document_structure')
     selectedSplitStrategy.value = response.split_strategy || dictionaryDefaultCode('split_strategy')
-    selectedUploadCollection.value = activeKnowledgeCollection.value || health.value?.collection_name || 'agent'
+    selectedUploadCollection.value = generalUploadCollectionOptions.value.includes(activeKnowledgeCollection.value)
+      ? activeKnowledgeCollection.value
+      : generalUploadCollectionOptions.value[0] || 'agent'
     uploadPreviewVisible.value = true
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '文件预解析失败')
@@ -309,20 +350,29 @@ async function handleRecommendKnowledgeUpload(): Promise<void> { // 调用模型
 
 async function handleConfirmKnowledgeUpload(): Promise<void> { // 使用确认后的 collection 和切分配置正式提交入库
   if (!uploadPreview.value || confirmingKnowledge.value || !canConfirmUpload.value) return
+  const targetCollection = selectedUploadCollection.value.trim()
+  if (isReservedKnowledgeCollection(targetCollection)) {
+    ElMessage.warning('销售训练临时集合不能作为上传目标')
+    return
+  }
+  if (isSalesTrainingCollection(targetCollection)) {
+    ElMessage.warning('销售训练资料请通过销售训练资料上传流程处理')
+    return
+  }
   confirmingKnowledge.value = true
   try {
     const response = await confirmKnowledgeUpload(
       uploadPreview.value.upload_id,
       selectedDocumentType.value,
       selectedSplitStrategy.value,
-      selectedUploadCollection.value.trim(),
+      targetCollection,
     )
     if (isKnowledgeResultStatus(response.status, 'result_kind', 'duplicate')) {
       ElMessage.info(response.message || '相同内容的文件已经存在')
     } else {
       ElMessage.success(response.message || '文件已保存，正在后台入库')
     }
-    activeKnowledgeCollection.value = selectedUploadCollection.value.trim()
+    activeKnowledgeCollection.value = targetCollection
     uploadPreviewVisible.value = false
     uploadPreview.value = null
     uploadRecommendation.value = null
@@ -461,7 +511,7 @@ onMounted(() => {
             :icon="Upload"
             :loading="uploadingKnowledge || uploadOptionsLoading"
             type="primary"
-            @click="openKnowledgeFilePicker"
+            @click="openKnowledgeUploadTypeDialog"
           >
             上传文件
           </el-button>
@@ -595,6 +645,25 @@ onMounted(() => {
       </footer>
     </section>
 
+    <el-dialog
+      v-model="uploadTypeDialogVisible"
+      :class="['upload-type-dialog', `theme-${props.themeMode}`]"
+      title="选择资料类型"
+      width="520px"
+      destroy-on-close
+    >
+      <div class="knowledge-upload-type-options">
+        <button type="button" class="knowledge-upload-type-option" @click="openKnowledgeFilePicker">
+          <span class="knowledge-upload-type-icon"><BookKey :size="20" /></span>
+          <strong>通用知识</strong>
+        </button>
+        <button type="button" class="knowledge-upload-type-option" @click="openSalesTrainingKnowledgeUpload">
+          <span class="knowledge-upload-type-icon"><BrainCircuit :size="20" /></span>
+          <strong>销售训练资料</strong>
+        </button>
+      </div>
+    </el-dialog>
+
     <FilePreviewDialog
       v-model="knowledgePreviewVisible"
       :loading="knowledgePreviewLoading"
@@ -665,7 +734,7 @@ onMounted(() => {
               placeholder="选择或输入 Collection"
             >
               <el-option
-                v-for="collectionName in collectionOptions"
+                v-for="collectionName in generalUploadCollectionOptions"
                 :key="collectionName"
                 :label="collectionName"
                 :value="collectionName"
@@ -970,6 +1039,46 @@ onMounted(() => {
   display: none;
 }
 
+.knowledge-upload-type-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.knowledge-upload-type-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.knowledge-upload-type-option:hover,
+.knowledge-upload-type-option:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--line));
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-2));
+  outline: none;
+}
+
+.knowledge-upload-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  border-radius: 8px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
 .upload-preview {
   display: grid;
   gap: 14px;
@@ -1051,8 +1160,13 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
+  .knowledge-management-page {
+    overflow-y: auto;
+  }
+
   .knowledge-page-header,
   .knowledge-grid,
+  .knowledge-upload-type-options,
   .preview-summary,
   .preview-form {
     grid-template-columns: 1fr;
@@ -1073,6 +1187,14 @@ onMounted(() => {
 
   .knowledge-search-input {
     width: 100%;
+  }
+
+  .knowledge-collection-tabs {
+    min-height: 52px;
+  }
+
+  .knowledge-workspace {
+    min-height: 420px;
   }
 
   .knowledge-pagination {

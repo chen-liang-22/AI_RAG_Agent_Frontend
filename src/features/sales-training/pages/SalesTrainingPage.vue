@@ -108,11 +108,16 @@ import TrainingKnowledgeUploadPanel from '../components/TrainingKnowledgeUploadP
 import TrainingReviewWorkspace from '../components/TrainingReviewWorkspace.vue'
 import { DEFAULT_KNOWLEDGE_UPLOAD_OPTIONS, normalizeKnowledgeUploadOptions } from '../../../shared/knowledgeUploadOptions'
 
-const props = defineProps<{ themeMode: 'dark' | 'light' }>()
-
 type TrainingWorkspaceTab = 'knowledge' | 'setup' | 'chat' | 'review'
 type SetupFlowTab = 'plan' | 'role' | 'stage' | 'score'
 type TrainingMessageRole = 'customer' | 'trainee' | 'system'
+
+const props = withDefaults(defineProps<{
+  themeMode: 'dark' | 'light'
+  initialWorkspaceTab?: TrainingWorkspaceTab
+}>(), {
+  initialWorkspaceTab: 'setup',
+})
 
 interface TrainingNextAction {
   title: string
@@ -298,7 +303,7 @@ const messages = ref<TrainingMessage[]>([])
 const retrievedChunkIds = ref<string[]>([])
 const stageStatus = ref('未开始')
 const trainingWindow = ref<HTMLElement | null>(null)
-const activeWorkspaceTab = ref<TrainingWorkspaceTab>('setup')
+const activeWorkspaceTab = ref<TrainingWorkspaceTab>(props.initialWorkspaceTab)
 const activeSetupTab = ref<SetupFlowTab>('plan')
 
 const uploading = ref(false)

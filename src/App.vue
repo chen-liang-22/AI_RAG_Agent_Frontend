@@ -52,6 +52,7 @@ const DictionaryManagementPage = defineAsyncComponent(
 
 const themeMode = ref<ThemeMode>(readInitialThemeMode())
 const activePage = ref<MainPage>('home')
+const salesTrainingInitialWorkspaceTab = ref<'setup' | 'knowledge'>('setup')
 const authRestoring = ref(true)
 const authLoading = ref(false)
 const authError = ref('')
@@ -137,7 +138,17 @@ function restorePageFromLocation(): void { // 登录恢复、刷新和菜单加�
 }
 
 function handlePageNavigation(page: MainPage): void { // 处理侧栏、首页搜索和最近访问发起的页面导航
+  if (page === 'salesTraining') salesTrainingInitialWorkspaceTab.value = 'setup'
   activatePage(page, allowedPages.value.has(page) ? 'push' : 'replace')
+}
+
+function handleSalesTrainingKnowledgeNavigation(): void { // 从全局知识库进入销售训练资料管理
+  if (!allowedPages.value.has('salesTraining')) {
+    ElMessage.warning('当前账号没有销售陪练访问权限')
+    return
+  }
+  salesTrainingInitialWorkspaceTab.value = 'knowledge'
+  activatePage('salesTraining', 'push')
 }
 
 async function refreshHealth(): Promise<void> { // 在应用层统一刷新健康状态，供顶栏和首页复用
@@ -338,8 +349,13 @@ onBeforeUnmount(() => {
     <KnowledgeManagementPage
       v-else-if="activePage === 'knowledgeManagement'"
       :theme-mode="themeMode"
+      @open-sales-training-knowledge="handleSalesTrainingKnowledgeNavigation"
     />
-    <SalesTrainingPage v-else-if="activePage === 'salesTraining'" :theme-mode="themeMode" />
+    <SalesTrainingPage
+      v-else-if="activePage === 'salesTraining'"
+      :theme-mode="themeMode"
+      :initial-workspace-tab="salesTrainingInitialWorkspaceTab"
+    />
     <KnowledgeGraphPage v-else-if="activePage === 'knowledgeGraph'" :theme-mode="themeMode" />
     <ExamPage v-else-if="activePage === 'exam'" :theme-mode="themeMode" />
     <UserManagementPage v-else-if="activePage === 'userManagement'" :current-user="currentUser" />
